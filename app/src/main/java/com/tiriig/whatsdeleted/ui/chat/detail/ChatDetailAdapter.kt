@@ -3,6 +3,7 @@ package com.tiriig.whatsdeleted.ui.chat.detail
 import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -59,7 +60,11 @@ class ChatDetailAdapter :
 
         @SuppressLint("SetTextI18n")
         fun bind(chat: Chat) {
-            if (chat.isDeleted) binding.root.setBackgroundResource(R.drawable.deleted_message_background)
+            binding.deletedTag.isVisible = chat.isDeleted
+            binding.root.setBackgroundResource(
+                if (chat.isDeleted) R.drawable.deleted_message_background
+                else R.drawable.message_background
+            )
             binding.message.text = chat.message
             binding.date.text = chat.dateTime.formatTime()
         }
