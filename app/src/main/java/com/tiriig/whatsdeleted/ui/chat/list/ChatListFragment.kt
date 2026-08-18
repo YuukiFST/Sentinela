@@ -36,9 +36,13 @@ class ChatListFragment : Fragment() {
 
     private fun fetchChat() {
         viewModel.getChatList.observe(viewLifecycleOwner) {
-            if (it.isNullOrEmpty()) run {
+            if (it.isNullOrEmpty()) {
+                binding.emptyIcon.show()
                 binding.emptyTv.show()
-            } else binding.emptyTv.hide()
+            } else {
+                binding.emptyIcon.hide()
+                binding.emptyTv.hide()
+            }
             adapter.submitList(it)
             binding.recyclerView.adapter = adapter
             binding.loading.hide()
