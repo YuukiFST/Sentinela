@@ -1,9 +1,6 @@
 package com.tiriig.whatsdeleted.data.model
 
 import androidx.annotation.Keep
-import androidx.room.ColumnInfo
-import androidx.room.Entity
-import androidx.room.PrimaryKey
 
 @Keep
 sealed class ChatItem {
