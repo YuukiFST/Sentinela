@@ -34,10 +34,14 @@ fun String.isValidTitle(): Boolean {
         "WhatsApp Web is currently active" -> false
         "Tap for more info" -> false
         "Waiting for Wi-Fi" -> false
-        "This message was deleted" -> false
-        "This message was deleted." -> false
         else -> true
     }
+}
+
+// WhatsApp/Telegram replace the notification body with this text once the
+// original message is deleted, Signal does the same with a trailing period.
+fun String.isDeletionNotice(): Boolean {
+    return this == "This message was deleted" || this == "This message was deleted."
 }
 
 fun String.isValidApp(): Boolean {

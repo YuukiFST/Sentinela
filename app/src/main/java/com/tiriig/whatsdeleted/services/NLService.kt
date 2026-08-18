@@ -3,9 +3,12 @@ package com.tiriig.whatsdeleted.services
 import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.data.repository.ChatRepository
+import com.tiriig.whatsdeleted.utility.Notifications
 import com.tiriig.whatsdeleted.utility.getRandomNum
+import com.tiriig.whatsdeleted.utility.isDeletionNotice
 import com.tiriig.whatsdeleted.utility.isValidApp
 import com.tiriig.whatsdeleted.utility.isValidTitle
 import dagger.hilt.android.AndroidEntryPoint
@@ -21,6 +24,9 @@ class NLService : NotificationListenerService() {
 
     @Inject
     lateinit var repository: ChatRepository
+
+    @Inject
+    lateinit var notifications: Notifications
 
     // This scope is tied to the service's lifecycle and uses a background thread.
     // A SupervisorJob ensures that if one child coroutine fails, the others are not cancelled.
@@ -56,8 +62,6 @@ class NLService : NotificationListenerService() {
     }
 
     private suspend fun saveNewMessage(title: String, text: String, time: Long, app: String) {
-        val id = getRandomNum()
-
         if (title.contains(":")) {
             // Assumes "GroupName: SenderName" format
             var groupName = title.substringBefore(":")
@@ -68,13 +72,38 @@ class NLService : NotificationListenerService() {
                 groupName = groupName.substringBefore("(").trim()
             }
 
-            val groupChat = Chat(id, groupName, "$senderName: $text", time, app, isGroup = true)
+            if (text.isDeletionNotice()) {
+                flagLastMessageDeleted(groupName, app)
+                return
+            }
+
+            val groupChat = Chat(getRandomNum(), groupName, "$senderName: $text", time, app, isGroup = true)
             repository.saveMessage(groupChat)
         } else {
+            if (text.isDeletionNotice()) {
+                flagLastMessageDeleted(title, app)
+                return
+            }
+
             // Standard direct message
-            val chat = Chat(id, title, text, time, app)
+            val chat = Chat(getRandomNum(), title, text, time, app)
             repository.saveMessage(chat)
         }
+    }
+
+    // The notification content is replaced rather than removed when a message is
+    // deleted, so we just flag the chat's most recent message and let the user know.
+    private suspend fun flagLastMessageDeleted(user: String, app: String) {
+        val lastMessage = repository.lastMessage(user) ?: return
+        if (lastMessage.isDeleted) return
+
+        repository.messageIsDeleted(lastMessage.id)
+        notifications.notify(
+            user,
+            getString(R.string.deleted_message_title),
+            getString(R.string.deleted_message_body, user),
+            app
+        )
     }
 
     override fun onDestroy() {
