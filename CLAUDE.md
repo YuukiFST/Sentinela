@@ -36,6 +36,15 @@ If you change how titles/bodies are parsed, keep in mind `ChatRepository.saveMes
 also de-dupes against the last stored message for that `user`, so a
 malformed `user` key silently breaks both dedup and deletion detection.
 
+**Deletion detection is best-effort, not guaranteed.** WhatsApp doesn't
+reliably re-post a "This message was deleted" notification for every
+deletion anymore, so `flagLastMessageDeleted()` only catches the cases
+where it still does. Don't rip this out — it's free when it works — but
+don't advertise it as reliable either. The fallback the app actually
+depends on is manual: the user notices a message vanished inside WhatsApp
+itself, then opens WhatsDeleted to read what it said, since the original
+notification was already captured and stored before it was deleted.
+
 ## Package layout
 
 ```
