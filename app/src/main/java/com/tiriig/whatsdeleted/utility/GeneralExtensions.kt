@@ -13,7 +13,13 @@ import com.google.android.material.chip.Chip
 import com.tiriig.whatsdeleted.R
 
 
+// WhatsApp bundles unread messages from several chats under one summary
+// notification titled e.g. "12 new messages" - that's not a real contact.
+private val messageCountTitle = Regex("""^\d+\s+(new\s+)?messages?$""", RegexOption.IGNORE_CASE)
+
 fun String.isValidTitle(): Boolean {
+    if (messageCountTitle.matches(this)) return false
+
     return when (this) {
         "" -> false
         "WhatsApp" -> false
