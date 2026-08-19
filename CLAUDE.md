@@ -70,6 +70,12 @@ utility/       Extension functions, Constants-free — no dead sample data, keep
 - Navigation is a single-Activity setup: `MainActivity` hosts a Navigation
   Component graph (`res/navigation/main_navigation.xml`) with two
   destinations, `chatListFragment` (start) and `chatDetailFragment`.
+- The app draws edge-to-edge (`MainActivity.enableEdgeToEdge()`), so don't
+  reintroduce `android:statusBarColor`/`navigationBarColor` theme items —
+  they're ignored from Android 15 on anyway. `applyEdgeToEdgeInsets()` pads
+  `appBarLayout` and `nav_host_fragment` with the system bar insets instead;
+  if you add another top-level container to `activity_main.xml`, it needs
+  the same treatment or it'll sit under the status/nav bar.
 
 ## Database
 
