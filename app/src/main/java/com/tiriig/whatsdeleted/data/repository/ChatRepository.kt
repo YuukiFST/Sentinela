@@ -6,6 +6,8 @@ import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.data.model.DeletedMessage
 import com.tiriig.whatsdeleted.utility.isValidTitle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,16 +17,22 @@ class ChatRepository @Inject constructor(
     private val database: Database
 ) {
 
+    // WhatsApp/Telegram often re-post the same notification for one message within
+    // milliseconds of each other, so the dedup check below needs to run atomically -
+    // otherwise two overlapping saves both read "no duplicate yet" and both insert.
+    private val saveMutex = Mutex()
+
     suspend fun saveMessage(chat: Chat) {
         withContext(Dispatchers.IO) {
-            if (chat.message.isValidTitle()) {
+            if (!chat.message.isValidTitle()) return@withContext
+
+            saveMutex.withLock {
                 //fetch last message and make comparison to avoid duplicates
                 val lastMessage = database.userDao().getLastMessage(chat.user)
-                if (lastMessage != null) {
-                    if (chat.message != lastMessage.message && chat.dateTime != lastMessage.dateTime) database.userDao().save(chat)
-                } else {
-                    database.userDao().save(chat)
-                }
+                val isDuplicate = lastMessage != null &&
+                    (chat.message == lastMessage.message || chat.dateTime == lastMessage.dateTime)
+
+                if (!isDuplicate) database.userDao().save(chat)
             }
         }
     }
