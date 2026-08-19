@@ -5,10 +5,14 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.os.bundleOf
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.navigation.findNavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.fragment.findNavController
@@ -30,9 +34,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         binding = ActivityMainBinding.inflate(layoutInflater)
         val view = binding.root
         setContentView(view)
+        applyEdgeToEdgeInsets()
         setUpMain()
         navigateToChatDetail()
         requestNotificationPermission()
@@ -48,6 +54,16 @@ class MainActivity : AppCompatActivity() {
         navHost =
             supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
         setupActionBarWithNavController(navHost.navController)
+    }
+
+    //Draws the toolbar behind the status bar and keeps content clear of both system bars
+    private fun applyEdgeToEdgeInsets() {
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.appBarLayout.updatePadding(top = bars.top)
+            binding.navHostFragment.updatePadding(bottom = bars.bottom)
+            insets
+        }
     }
 
     //Needed from Android 13 onwards, otherwise the "message deleted" alert never shows up
