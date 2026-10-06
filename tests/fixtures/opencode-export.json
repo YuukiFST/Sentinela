@@ -1,0 +1,246 @@
+{
+ "info": {
+  "id": "ses_0123456789abcdefghijklmnop",
+  "slug": "brave-garden",
+  "projectID": "deadbeef",
+  "directory": "C:\\proj",
+  "title": "Fix the parser",
+  "version": "1.18.30",
+  "time": {
+   "created": 1789467600000,
+   "updated": 1789468200000
+  }
+ },
+ "messages": [
+  {
+   "info": {
+    "id": "msg_1",
+    "sessionID": "ses_0123456789abcdefghijklmnop",
+    "role": "user",
+    "time": {
+     "created": 1789467601000
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "anthropic",
+     "modelID": "claude-sonnet-4-5"
+    }
+   },
+   "parts": [
+    {
+     "id": "prt_msg_1_0",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_1",
+     "type": "text",
+     "text": "Fix the parser"
+    },
+    {
+     "id": "prt_msg_1_1",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_1",
+     "type": "file",
+     "mime": "image/png",
+     "url": "data:..."
+    }
+   ]
+  },
+  {
+   "info": {
+    "id": "msg_2",
+    "sessionID": "ses_0123456789abcdefghijklmnop",
+    "role": "assistant",
+    "time": {
+     "created": 1789467601000
+    },
+    "agent": "build",
+    "parentID": "msg_1",
+    "modelID": "claude-sonnet-4-5",
+    "providerID": "anthropic",
+    "mode": "build",
+    "path": {
+     "cwd": "C:\\proj",
+     "root": "C:\\proj"
+    },
+    "cost": 0,
+    "tokens": {}
+   },
+   "parts": [
+    {
+     "id": "prt_msg_2_0",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_2",
+     "type": "step-start",
+     "snapshot": "abc"
+    },
+    {
+     "id": "prt_msg_2_1",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_2",
+     "type": "reasoning",
+     "text": "hidden"
+    },
+    {
+     "id": "prt_msg_2_2",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_2",
+     "type": "text",
+     "text": "Root cause: the regex misses CRLF."
+    },
+    {
+     "id": "prt_msg_2_3",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_2",
+     "type": "tool",
+     "tool": "edit",
+     "callID": "call_1",
+     "state": {
+      "status": "completed",
+      "input": {
+       "filePath": "C:\\proj\\src\\parser.py",
+       "oldString": "a",
+       "newString": "b"
+      },
+      "output": "ok",
+      "title": "src/parser.py",
+      "metadata": {},
+      "time": {
+       "start": 1,
+       "end": 2
+      }
+     }
+    },
+    {
+     "id": "prt_msg_2_4",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_2",
+     "type": "tool",
+     "tool": "bash",
+     "callID": "call_2",
+     "state": {
+      "status": "error",
+      "input": {
+       "command": "python -m pytest\nsecond line",
+       "description": "tests"
+      },
+      "error": "Exit code 1\nAssertionError",
+      "time": {
+       "start": 1,
+       "end": 2
+      }
+     }
+    },
+    {
+     "id": "prt_msg_2_5",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_2",
+     "type": "step-finish",
+     "reason": "stop",
+     "snapshot": "abc",
+     "tokens": {},
+     "cost": 0
+    }
+   ]
+  },
+  {
+   "info": {
+    "id": "msg_3",
+    "sessionID": "ses_0123456789abcdefghijklmnop",
+    "role": "user",
+    "time": {
+     "created": 1789467601000
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "anthropic",
+     "modelID": "claude-sonnet-4-5"
+    }
+   },
+   "parts": [
+    {
+     "id": "prt_msg_3_0",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_3",
+     "type": "text",
+     "synthetic": true,
+     "text": "Called the Read tool with the following input: {}"
+    }
+   ]
+  },
+  {
+   "info": {
+    "id": "msg_4",
+    "sessionID": "ses_0123456789abcdefghijklmnop",
+    "role": "user",
+    "time": {
+     "created": 1789467601000
+    },
+    "agent": "build",
+    "model": {
+     "providerID": "anthropic",
+     "modelID": "claude-sonnet-4-5"
+    }
+   },
+   "parts": [
+    {
+     "id": "prt_msg_4_0",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_4",
+     "type": "text",
+     "text": "Now add a test"
+    }
+   ]
+  },
+  {
+   "info": {
+    "id": "msg_5",
+    "sessionID": "ses_0123456789abcdefghijklmnop",
+    "role": "assistant",
+    "time": {
+     "created": 1789467601000
+    },
+    "agent": "build",
+    "parentID": "msg_4",
+    "modelID": "claude-sonnet-4-5",
+    "providerID": "anthropic",
+    "mode": "build",
+    "path": {
+     "cwd": "C:\\proj",
+     "root": "C:\\proj"
+    },
+    "cost": 0,
+    "tokens": {}
+   },
+   "parts": [
+    {
+     "id": "prt_msg_5_0",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_5",
+     "type": "text",
+     "text": "Done, test added."
+    },
+    {
+     "id": "prt_msg_5_1",
+     "sessionID": "ses_0123456789abcdefghijklmnop",
+     "messageID": "msg_5",
+     "type": "tool",
+     "tool": "write",
+     "callID": "call_3",
+     "state": {
+      "status": "completed",
+      "input": {
+       "filePath": "C:\\proj\\tests\\test_parser.py",
+       "content": "..."
+      },
+      "output": "ok",
+      "title": "tests/test_parser.py",
+      "metadata": {},
+      "time": {
+       "start": 1,
+       "end": 2
+      }
+     }
+    }
+   ]
+  }
+ ]
+}
