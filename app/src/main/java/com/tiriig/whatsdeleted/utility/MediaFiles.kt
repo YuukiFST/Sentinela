@@ -46,3 +46,10 @@ fun Context.openMediaFile(file: File) {
         Toast.makeText(this, R.string.media_no_viewer, Toast.LENGTH_SHORT).show()
     }
 }
+
+/** Copy plain text to the clipboard with a short confirmation. */
+fun Context.copyText(text: String) {
+    val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+    cm.setPrimaryClip(android.content.ClipData.newPlainText("message", text))
+    Toast.makeText(this, R.string.message_copied, Toast.LENGTH_SHORT).show()
+}

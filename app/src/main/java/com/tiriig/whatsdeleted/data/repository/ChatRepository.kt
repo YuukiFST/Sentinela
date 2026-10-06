@@ -37,15 +37,29 @@ class ChatRepository @Inject constructor(
     // otherwise two overlapping saves both read "no duplicate yet" and both insert.
     private val saveMutex = Mutex()
 
+    companion object {
+        /** Re-posts of one notification arrive within seconds; the same text sent
+         * minutes later is a new message and must be kept. */
+        const val DEDUP_WINDOW_MS = 10_000L
+    }
+
     suspend fun saveMessage(chat: Chat) {
         withContext(Dispatchers.IO) {
             if (!chat.message.isValidTitle()) return@withContext
 
             saveMutex.withLock {
-                //fetch last message and make comparison to avoid duplicates
-                val lastMessage = database.userDao().getLastMessage(chat.user)
+                // Scope to this conversation (user + app): the same contact name
+                // can exist in two apps, and comparing across apps both hides
+                // real messages and lets re-posts slip through.
+                val lastMessage = try {
+                    database.userDao().getLastMessageForChat(chat.user, chat.app)
+                        ?: database.userDao().getLastMessage(chat.user)
+                } catch (_: Exception) {
+                    null
+                }
                 val isDuplicate = lastMessage != null &&
-                    (chat.message == lastMessage.message || chat.dateTime == lastMessage.dateTime)
+                    chat.message == lastMessage.message &&
+                    kotlin.math.abs(chat.dateTime - lastMessage.dateTime) < DEDUP_WINDOW_MS
 
                 if (!isDuplicate) database.userDao().save(chat)
             }

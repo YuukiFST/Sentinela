@@ -67,19 +67,28 @@ class NLService : NotificationListenerService() {
         val extras = sbn.notification.extras
         val title = extras.getString("android.title") ?: return
         val text = extras.getCharSequence("android.text")?.toString() ?: ""
-        val time = sbn.notification.`when`
+        // `when` is 0 on some devices/versions — fall back to the post time so
+        // every stored message still gets a usable, dedupable timestamp.
+        var time = sbn.notification.`when`
+        if (time == 0L) time = sbn.postTime
+        if (time == 0L) time = System.currentTimeMillis()
         val app = sbn.packageName
+        // Bundled MessagingStyle digests re-list recent history on every update.
+        val lines = extras.getCharSequenceArray("android.textLines")
+            ?.mapNotNull { it?.toString()?.takeIf { s -> s.isNotEmpty() } }
+            ?: emptyList()
 
-        // Ignore notifications with invalid titles or empty text (e.g., "Checking for new messages")
-        if (!title.isValidTitle() || text.isEmpty()) return
+        // Ignore notifications with invalid titles (e.g., "Checking for new messages").
+        if (!title.isValidTitle()) return
+        if (text.isEmpty() && lines.isEmpty()) return
 
         // Launch a coroutine on our background-threaded scope to do the heavy lifting.
         serviceScope.launch {
-            saveNewMessage(title, text, time, app)
+            saveNewMessage(title, text, lines, time, app)
         }
     }
 
-    private suspend fun saveNewMessage(title: String, text: String, time: Long, app: String) {
+    private suspend fun saveNewMessage(title: String, text: String, lines: List<String>, time: Long, app: String) {
         // Sentinela rule: TEXT is saved for everyone except contacts the user
         // ignored (saveMessages = false). The media switch only gates media
         // copies and the "deleted" alert (see flagLastMessageDeleted).
@@ -100,6 +109,13 @@ class NLService : NotificationListenerService() {
                 return
             }
 
+            if (lines.size > 1) {
+                saveLines(groupName, senderName, lines, time, app, isGroup = true)
+                repository.runCleanupIfDue()
+                return
+            }
+            if (text.isEmpty()) return
+
             val groupChat = Chat(getRandomNum(), groupName, "$senderName: $text", time, app, isGroup = true)
             repository.saveMessage(groupChat)
         } else {
@@ -110,11 +126,47 @@ class NLService : NotificationListenerService() {
                 return
             }
 
+            if (lines.size > 1) {
+                saveLines(title, null, lines, time, app, isGroup = false)
+                repository.runCleanupIfDue()
+                return
+            }
+            if (text.isEmpty()) return
+
             // Standard direct message
             val chat = Chat(getRandomNum(), title, text, time, app)
             repository.saveMessage(chat)
         }
         repository.runCleanupIfDue()
+    }
+
+    /**
+     * Saving the whole digest on every update is what rendered one message
+     * several times. Save line-by-line (oldest first) and let the repository's
+     * 10s dedup window drop the overlap, keeping only the genuinely new suffix.
+     */
+    private suspend fun saveLines(
+        user: String,
+        senderName: String?,
+        lines: List<String>,
+        time: Long,
+        app: String,
+        isGroup: Boolean
+    ) {
+        if (!repository.shouldSaveMessages(user, app)) return
+        val clean = lines.map { it.trim() }
+            .filter { it.isNotEmpty() && it.isValidTitle() && !it.isDeletionNotice() }
+            .takeLast(10)
+        if (clean.isEmpty()) return
+        clean.forEach { line ->
+            val body =
+                if (isGroup && senderName != null && !line.startsWith("$senderName:")) {
+                    "$senderName: $line"
+                } else {
+                    line
+                }
+            repository.saveMessage(Chat(getRandomNum(), user, body, time, app, isGroup = isGroup))
+        }
     }
 
     // The notification content is replaced rather than removed when a message is

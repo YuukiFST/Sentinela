@@ -1,5 +1,7 @@
 package com.tiriig.whatsdeleted.ui.chat.list
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.Menu
@@ -7,9 +9,11 @@ import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.MenuHost
 import androidx.core.view.MenuProvider
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -18,7 +22,9 @@ import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.databinding.FragmentChatListBinding
 import com.tiriig.whatsdeleted.ui.chat.ChatViewModel
+import com.tiriig.whatsdeleted.utility.hasMediaPermissions
 import com.tiriig.whatsdeleted.utility.hide
+import com.tiriig.whatsdeleted.utility.mediaPermissions
 import com.tiriig.whatsdeleted.utility.show
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -30,6 +36,11 @@ class ChatListFragment : Fragment() {
 
     private var _binding: FragmentChatListBinding? = null
     private val binding get() = _binding!!
+
+    private val mediaPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            refreshMediaBanner()
+        }
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -43,6 +54,41 @@ class ChatListFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         setupMenu()
         fetchChat()
+        binding.mediaBannerBtn.setOnClickListener {
+            mediaPermissionLauncher.launch(mediaPermissions())
+        }
+        refreshMediaBanner()
+        setVersionLabel()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Permission can be revoked in system Settings while we are away.
+        if (_binding != null) refreshMediaBanner()
+    }
+
+    /** Full-res photo/video/audio capture needs these; text backup works without. */
+    private fun refreshMediaBanner() {
+        binding.mediaBanner.isVisible = !requireContext().hasMediaPermissions()
+    }
+
+    private fun setVersionLabel() {
+        val version = try {
+            val pm = requireContext().packageManager
+            val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(
+                    requireContext().packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(requireContext().packageName, 0)
+            }
+            info.versionName ?: ""
+        } catch (_: Exception) {
+            ""
+        }
+        binding.versionTv.text = if (version.isNotEmpty()) "v$version" else ""
     }
 
     private fun setupMenu() {

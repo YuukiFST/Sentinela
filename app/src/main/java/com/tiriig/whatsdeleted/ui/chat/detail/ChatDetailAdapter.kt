@@ -1,6 +1,7 @@
 package com.tiriig.whatsdeleted.ui.chat.detail
 
 import android.annotation.SuppressLint
+import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -15,6 +16,7 @@ import com.tiriig.whatsdeleted.data.model.ChatItem
 import com.tiriig.whatsdeleted.databinding.ItemDateBinding
 import com.tiriig.whatsdeleted.databinding.ItemMessageBinding
 import com.tiriig.whatsdeleted.utility.MediaKind
+import com.tiriig.whatsdeleted.utility.copyText
 import com.tiriig.whatsdeleted.utility.formatTime
 import com.tiriig.whatsdeleted.utility.openMediaFile
 import java.io.File
@@ -62,6 +64,23 @@ class ChatDetailAdapter :
 
     inner class MessageViewHolder(private val binding: ItemMessageBinding) :
         RecyclerView.ViewHolder(binding.root) {
+
+        init {
+            // Links (autoLink="web" in XML) need a movement method to be tappable.
+            binding.message.movementMethod = LinkMovementMethod.getInstance()
+            // Long-press anywhere on the bubble copies the text.
+            val copyListener = View.OnLongClickListener {
+                val text = binding.message.text?.toString().orEmpty()
+                if (text.isNotEmpty()) {
+                    binding.root.context.copyText(text)
+                    true
+                } else {
+                    false
+                }
+            }
+            binding.root.setOnLongClickListener(copyListener)
+            binding.message.setOnLongClickListener(copyListener)
+        }
 
         @SuppressLint("SetTextI18n")
         fun bind(chat: Chat) {
