@@ -80,8 +80,9 @@ class NLService : NotificationListenerService() {
     }
 
     private suspend fun saveNewMessage(title: String, text: String, time: Long, app: String) {
-        // Sentinela rule: TEXT is saved for EVERYONE (cheap). The allowlist only
-        // gates media staging and the "deleted" alert (see flagLastMessageDeleted).
+        // Sentinela rule: TEXT is saved for everyone except contacts the user
+        // ignored (saveMessages = false). The media switch only gates media
+        // copies and the "deleted" alert (see flagLastMessageDeleted).
         if (title.contains(":")) {
             // Assumes "GroupName: SenderName" format
             var groupName = title.substringBefore(":")
@@ -92,6 +93,8 @@ class NLService : NotificationListenerService() {
                 groupName = groupName.substringBefore("(").trim()
             }
 
+            if (!repository.shouldSaveMessages(groupName, app)) return
+
             if (text.isDeletionNotice()) {
                 flagLastMessageDeleted(groupName, app)
                 return
@@ -100,6 +103,8 @@ class NLService : NotificationListenerService() {
             val groupChat = Chat(getRandomNum(), groupName, "$senderName: $text", time, app, isGroup = true)
             repository.saveMessage(groupChat)
         } else {
+            if (!repository.shouldSaveMessages(title, app)) return
+
             if (text.isDeletionNotice()) {
                 flagLastMessageDeleted(title, app)
                 return
@@ -121,17 +126,17 @@ class NLService : NotificationListenerService() {
         repository.messageIsDeleted(lastMessage.id)
 
         if (!repository.isAllowed(user, app)) {
-            // Opted out: drop any staged copy for this chat and stay silent
+            // Opted out: no media was copied for this chat; stay silent
             // (the text stays flagged in the DB for manual lookup).
-            tempStore.discardFor(user, app)
             repository.runCleanupIfDue()
             return
         }
 
-        // Allowed (or never configured): attach a recent staged copy, if any.
-        val staged = tempStore.claimFor(user, app)
-        if (staged != null) {
-            repository.setMediaPath(lastMessage.id, staged.absolutePath)
+        // Media is normally linked when the file shows up (MediaObserverService);
+        // a file with no message in the 5 min before it stays ownerless, so claim a recent one.
+        if (lastMessage.mediaPath == null) {
+            val ownerless = tempStore.claimOwnerless(repository.linkedMediaPaths())
+            if (ownerless != null) repository.setMediaPath(lastMessage.id, ownerless.absolutePath)
         }
 
         notifications.notify(

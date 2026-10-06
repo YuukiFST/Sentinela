@@ -3,6 +3,7 @@ package com.tiriig.whatsdeleted.data.repository
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.LiveData
+import androidx.room.withTransaction
 import com.tiriig.whatsdeleted.data.database.Database
 import com.tiriig.whatsdeleted.data.model.AllowedContact
 import com.tiriig.whatsdeleted.data.model.Chat
@@ -95,6 +96,32 @@ class ChatRepository @Inject constructor(
         }
     }
 
+    /**
+     * Links a fresh media copy to the newest message of (user, app) since
+     * [since] that has none yet. No such message: the copy stays ownerless.
+     */
+    suspend fun linkMediaToRecentMessage(user: String, app: String, since: Long, path: String) {
+        withContext(Dispatchers.IO) {
+            val id = database.userDao().getMessageAwaitingMedia(user, app, since) ?: return@withContext
+            database.userDao().setMediaPath(id, path)
+        }
+    }
+
+    suspend fun linkedMediaPaths(): Set<String> {
+        return withContext(Dispatchers.IO) {
+            database.userDao().getAllMediaPaths().toSet()
+        }
+    }
+
+    /** Removes the conversation from the chat list: its messages and media copies. */
+    suspend fun deleteConversation(user: String, app: String) {
+        withContext(Dispatchers.IO) {
+            val paths = database.userDao().getMediaPathsForChat(user, app)
+            database.userDao().deleteChat(user, app)
+            tempStore.delete(paths)
+        }
+    }
+
     // ---- Allowlist (opt-out: missing row == allowed) ----
 
     suspend fun isAllowed(user: String, app: String): Boolean {
@@ -104,8 +131,26 @@ class ChatRepository @Inject constructor(
     }
 
     suspend fun setAllowed(user: String, app: String, allowed: Boolean) {
+        updateContact(user, app) { it.copy(allowed = allowed) }
+    }
+
+    suspend fun shouldSaveMessages(user: String, app: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            database.allowedContactDao().get(user, app)?.saveMessages ?: true
+        }
+    }
+
+    suspend fun setSaveMessages(user: String, app: String, save: Boolean) {
+        updateContact(user, app) { it.copy(saveMessages = save) }
+    }
+
+    // Read-modify-write so flipping one switch keeps the other one's value.
+    private suspend fun updateContact(user: String, app: String, change: (AllowedContact) -> AllowedContact) {
         withContext(Dispatchers.IO) {
-            database.allowedContactDao().upsert(AllowedContact(user, app, allowed))
+            database.withTransaction {
+                val dao = database.allowedContactDao()
+                dao.upsert(change(dao.get(user, app) ?: AllowedContact(user, app)))
+            }
         }
     }
 
@@ -124,8 +169,8 @@ class ChatRepository @Inject constructor(
                 if (now - CleanupPrefs.lastCleanup(appContext) < CLEANUP_INTERVAL_MS) return@withContext
                 val cutoff = CleanupPrefs.retentionCutoff(appContext, now)
                 database.userDao().deleteOlderThan(cutoff)
-                val referenced = database.userDao().getAllMediaPaths().toSet()
-                tempStore.cleanup(cutoff, CleanupPrefs.maxMediaBytes(appContext), referenced)
+                val keep = database.userDao().getDeletedMediaPaths().toSet()
+                tempStore.cleanup(cutoff, CleanupPrefs.maxMediaBytes(appContext), keep)
                 CleanupPrefs.setLastCleanup(appContext, now)
             } catch (e: Exception) {
                 Log.w(TAG, "cleanup failed: $e")

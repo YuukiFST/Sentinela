@@ -2,7 +2,7 @@ package com.tiriig.whatsdeleted.data.model
 
 import androidx.annotation.Keep
 
-/** Projection for "SELECT DISTINCT user, app FROM chat". */
+/** Projection for the (user, app) pairs listed on the allowlist screen. */
 @Keep
 data class KnownConversation(
     val user: String,

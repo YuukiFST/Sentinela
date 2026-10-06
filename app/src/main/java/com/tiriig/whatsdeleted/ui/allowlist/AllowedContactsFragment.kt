@@ -13,9 +13,9 @@ import com.tiriig.whatsdeleted.utility.show
 import dagger.hilt.android.AndroidEntryPoint
 
 /**
- * Allowlist (opt-out): every known conversation listed with a switch
- * (default ON). OFF = no staged media + no "deleted" alert for that chat.
- * Text is still saved for everyone.
+ * Allowlist (opt-out): every known conversation listed with two switches
+ * (default ON). Messages OFF = contact ignored, nothing saved. Media OFF =
+ * no media copies + no "deleted" alert, text still saved.
  */
 @AndroidEntryPoint
 class AllowedContactsFragment : Fragment() {
@@ -36,9 +36,10 @@ class AllowedContactsFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-        adapter = AllowedContactAdapter { item, checked ->
-            viewModel.setAllowed(item.user, item.app, checked)
-        }
+        adapter = AllowedContactAdapter(
+            onToggleMedia = { item, checked -> viewModel.setAllowed(item.user, item.app, checked) },
+            onToggleMessages = { item, checked -> viewModel.setSaveMessages(item.user, item.app, checked) }
+        )
         binding.recyclerView.adapter = adapter
         viewModel.allowedUi.observe(viewLifecycleOwner) {
             if (it.isNullOrEmpty()) {

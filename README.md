@@ -35,9 +35,12 @@ Fork sem Firebase (`applicationId dev.vulto.sentinela`, sem `google-services.jso
 
 ## O que mudou
 
-- **Texto de todos, mídia só de permitidos**: todo texto de notificação continua salvo; a allowlist (menu "Monitoramento de mídia" na lista de conversas, switch por conversa, default ON) controla mídia e o alerta de "apagada". Opt-out: só existe linha no banco para quem foi desligado; contato desligado tem a cópia temporária descartada e não gera notificação (o texto segue marcado para consulta manual).
-- **Observador de mídia**: `MediaObserverService` com `FileObserver` recursivo em `WhatsApp/Media` (legado e `Android/media/...`, normal e Business). Arquivo novo é copiado na hora para `getExternalFilesDir/sentinela_media` e atribuído ao remetente mais recente (mensagem nos últimos 5 min) ou fica sem dono. Ao detectar "apagada" de contato permitido, a cópia recente é vinculada à mensagem (`Chat.mediaPath`, visível no detalhe).
-- **Limpeza automática**: `ChatRepository.runCleanupIfDue()` (1x/dia, após salvar) apaga mensagens com mais de N dias (default 30, `CleanupPrefs`) e arquivos órfãos/antigos além do teto (default 500MB, mais antigos primeiro).
+- **Dois switches por contato**: menu "Monitoramento por contato" na lista de conversas, default ON. "Mensagens" desligado ignora o contato (nada é salvo). "Mídia" desligado não copia mídia nem alerta quando ele apaga mensagem; o texto segue salvo e marcado como apagado para consulta manual. Opt-out: só existe linha no banco para quem mudou algum switch.
+- **Excluir conversa**: toque e segure na conversa da tela inicial. "Excluir" apaga mensagens e mídias salvas (a conversa volta se o contato mandar mensagem de novo); "Excluir e ignorar" também desliga "Mensagens" desse contato.
+- **Observador de mídia**: `MediaObserverService` usa duas fontes: `FileObserver` recursivo em `WhatsApp/Media` (legado e `Android/media/...`, normal e Business) e `MediaStoreWatcher` (`ContentObserver` no MediaStore, que funciona no Android 11+, onde o `FileObserver` pode não ver arquivos de outros apps). Pastas `Sent` são ignoradas. Arquivo novo é copiado na hora para `getExternalFilesDir/sentinela_media` e vinculado já à mensagem mais recente do remetente (últimos 5 min, `Chat.mediaPath`), então a mídia fica visível mesmo se a exclusão não for detectada ou acontecer horas depois. Sem mensagem recente, a cópia fica sem dono e só é vinculada se um "apagada" chegar em até 5 min.
+- **Ver mídia**: no detalhe da conversa, toque na miniatura (foto/vídeo) ou em "Abrir vídeo"/"Ouvir áudio" para abrir no app padrão do aparelho.
+- **Detecção de "apagada" em português**: reconhece "Esta mensagem foi apagada" (e variantes), não só o texto em inglês.
+- **Limpeza automática**: `ChatRepository.runCleanupIfDue()` (1x/dia, após salvar) apaga mensagens com mais de N dias (default 30, `CleanupPrefs`) e mídias antigas além do teto (default 500MB, mais antigas primeiro). Mídia de mensagem apagada nunca é removida pela limpeza.
 
 ## Permissões de mídia
 
@@ -47,6 +50,6 @@ Pedidas na tela de setup (botão "Permitir mídia", opcional). Sem elas, só o b
 
 - Atribuição de mídia é heurística (remetente mais recente em 5 min); pode vincular errado com mensagens simultâneas.
 - Chat silenciado não gera notificação: sem texto salvo, a mídia fica sem dono e só vincula se for a cópia recente não atribuída a outro chat.
-- Em Android 10+ com escopo de armazenamento, observar `/sdcard/WhatsApp/Media` pode não ver nada sem "Todas as mídias"/`MANAGE_EXTERNAL_STORAGE` (não solicitado); funciona melhor onde o WhatsApp ainda usa pastas legadas acessíveis.
+- Mídia só é copiada se o WhatsApp baixar o arquivo (download automático ligado para o tipo de mídia e a rede atual). No Android 14+, escolher "Permitir acesso limitado" nas permissões de fotos/vídeos impede a cópia: conceda acesso a todas.
 - Serviço de observação é simples (START_STICKY, sem foreground): o sistema pode matá-lo; ele é reiniciado junto ao NLService/MainActivity.
 - Renomear contato no WhatsApp cria uma "conversa" nova: remarque o switch na allowlist.

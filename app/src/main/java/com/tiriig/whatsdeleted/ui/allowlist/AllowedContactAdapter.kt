@@ -11,7 +11,8 @@ import com.tiriig.whatsdeleted.utility.changeBackgroundColor
 import com.tiriig.whatsdeleted.utility.name
 
 class AllowedContactAdapter(
-    private val onToggle: (AllowedUi, Boolean) -> Unit
+    private val onToggleMedia: (AllowedUi, Boolean) -> Unit,
+    private val onToggleMessages: (AllowedUi, Boolean) -> Unit
 ) : ListAdapter<AllowedUi, AllowedContactAdapter.ViewHolder>(Diff()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
@@ -30,11 +31,18 @@ class AllowedContactAdapter(
             binding.user.text = item.user
             binding.fromApp.text = item.app.name()
             binding.fromApp.changeBackgroundColor(item.app)
-            // Avoid re-triggering the listener on rebind.
+            // Avoid re-triggering the listeners on rebind.
+            binding.messagesSwitch.setOnCheckedChangeListener(null)
+            binding.messagesSwitch.isChecked = item.saveMessages
+            binding.messagesSwitch.setOnCheckedChangeListener { _, checked ->
+                onToggleMessages(item, checked)
+            }
             binding.allowSwitch.setOnCheckedChangeListener(null)
             binding.allowSwitch.isChecked = item.allowed
+            // An ignored contact has no messages to link media to.
+            binding.allowSwitch.isEnabled = item.saveMessages
             binding.allowSwitch.setOnCheckedChangeListener { _, checked ->
-                onToggle(item, checked)
+                onToggleMedia(item, checked)
             }
         }
     }

@@ -15,9 +15,11 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Hosts the [MediaObserver]: stages fresh WhatsApp media into
- * [TempMediaStore], attributing each file to the most recent sender
- * (message in the last 5 min) or leaving it ownerless ("unknown").
+ * Hosts [MediaObserver] and [MediaStoreWatcher]: copies fresh WhatsApp media
+ * into [TempMediaStore] and links each copy to the most recent message
+ * (last 5 min) right away, so it survives the original being deleted no
+ * matter when the deletion happens. Media of contacts switched OFF is never
+ * copied; media with no recent message stays ownerless.
  * Started piggyback on [NLService] and [MainActivity]; START_STICKY.
  */
 @AndroidEntryPoint
@@ -36,15 +38,20 @@ class MediaObserverService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var observer: MediaObserver? = null
+    private var storeWatcher: MediaStoreWatcher? = null
 
     override fun onCreate() {
         super.onCreate()
         observer = MediaObserver { file -> onMediaFile(file) }
+        storeWatcher = MediaStoreWatcher(applicationContext) { file -> onMediaFile(file) }
     }
 
+    // Called again by MainActivity after the media permission is granted:
+    // both start() calls are idempotent and pick up what is now readable.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         try {
             observer?.start()
+            storeWatcher?.start()
         } catch (e: Exception) {
             Log.w(TAG, "observer start failed (missing media permission?): $e")
         }
@@ -56,7 +63,10 @@ class MediaObserverService : Service() {
             try {
                 val since = System.currentTimeMillis() - ATTRIBUTION_WINDOW_MS
                 val recent = repository.mostRecentSince(since)
-                tempStore.stage(file, recent?.user, recent?.app)
+                if (recent != null && !repository.isAllowed(recent.user, recent.app)) return@launch
+                val copy = tempStore.stage(file) ?: return@launch
+                if (recent == null) return@launch
+                repository.linkMediaToRecentMessage(recent.user, recent.app, since, copy.absolutePath)
             } catch (e: Exception) {
                 Log.w(TAG, "stage failed: $e")
             }
@@ -68,6 +78,7 @@ class MediaObserverService : Service() {
     override fun onDestroy() {
         try {
             observer?.stop()
+            storeWatcher?.stop()
         } catch (_: Exception) { }
         serviceScope.cancel()
         super.onDestroy()

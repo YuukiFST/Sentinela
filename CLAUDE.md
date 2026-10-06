@@ -23,8 +23,11 @@ This is the part that's easy to get wrong, so read it before touching
 4. **Deletion isn't a separate system event.** When a message is deleted,
    the messaging app just posts a new notification for the same chat whose
    body is `"This message was deleted"` (WhatsApp/Telegram) or the same
-   text with a trailing period (Signal). `String.isDeletionNotice()`
-   catches both. When that happens, `NLService.flagLastMessageDeleted()`
+   text with a trailing period (Signal). The text follows the phone's
+   language (`"Esta mensagem foi apagada"` on pt-BR), so
+   `String.isDeletionNotice()` matches a set of localized notices; add the
+   language there, with a row in `NotificationTextTest`, before relying on it.
+   When that happens, `NLService.flagLastMessageDeleted()`
    looks up the most recent stored message for that chat and marks it
    `isDeleted = true` instead of saving the notice as a new message.
 5. `Notifications.notify()` then posts a local heads-up notification so the
@@ -79,7 +82,7 @@ utility/       Extension functions, Constants-free — no dead sample data, keep
 
 ## Database
 
-Room, entity `Chat` (table `chat`), currently at schema version 3
+Room, entities `Chat` (table `chat`) and `AllowedContact`, currently at schema version 6
 (`app/schemas/`, `exportSchema = true`). `MIGRATION_2_3` is a manual
 migration (table rename/rebuild); `AutoMigration(from = 2, to = 3)` is also
 declared in `@Database` — if you add a new migration, follow the existing

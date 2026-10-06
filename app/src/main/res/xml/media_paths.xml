@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Must match TempMediaStore.DIR_NAME -->
+<paths>
+    <external-files-path
+        name="sentinela_media"
+        path="sentinela_media/" />
+</paths>

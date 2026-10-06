@@ -3,6 +3,7 @@ package com.tiriig.whatsdeleted.services
 import android.os.Environment
 import android.os.FileObserver
 import android.util.Log
+import com.tiriig.whatsdeleted.utility.MediaKind
 import java.io.File
 
 /**
@@ -17,12 +18,6 @@ class MediaObserver(
     companion object {
         private const val TAG = "MediaObserver"
 
-        private val MEDIA_EXT = setOf(
-            "jpg", "jpeg", "png", "webp", "gif", "bmp",
-            "mp4", "mkv", "avi", "mov", "3gp", "webm",
-            "mp3", "m4a", "aac", "opus", "ogg", "amr", "wav", "flac"
-        )
-
         private fun candidateRoots(): List<File> {
             val ext = Environment.getExternalStorageDirectory()
             return listOf(
@@ -33,11 +28,18 @@ class MediaObserver(
             )
         }
 
+        /**
+         * Received WhatsApp media only: "Sent" subfolders hold what the user
+         * sent (attributing those to the last sender would be wrong) and
+         * dot-dirs (.Statuses, .Links) are not chat media.
+         */
         fun isMediaFile(f: File): Boolean {
             if (!f.isFile) return false
             val name = f.name
-            if (name.startsWith(".") || name.endsWith(".tmp") || name == ".nomedia") return false
-            return MEDIA_EXT.contains(name.substringAfterLast('.', "").lowercase())
+            if (name.startsWith(".") || name.endsWith(".tmp")) return false
+            val path = f.absolutePath
+            if ("/Sent/" in path || "/." in path) return false
+            return MediaKind.of(f) != null
         }
     }
 
@@ -79,7 +81,7 @@ class MediaObserver(
                         if (event and (CLOSE_WRITE or MOVED_TO) != 0) {
                             if (isMediaFile(f)) onNewMedia(f)
                         } else if (event and CREATE != 0) {
-                            if (f.isDirectory) watchTree(f)
+                            if (f.isDirectory && !f.name.startsWith(".")) watchTree(f)
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "event failed: $e")

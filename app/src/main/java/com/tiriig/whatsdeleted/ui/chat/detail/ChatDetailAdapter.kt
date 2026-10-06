@@ -2,17 +2,22 @@ package com.tiriig.whatsdeleted.ui.chat.detail
 
 import android.annotation.SuppressLint
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
 import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.data.model.ChatItem
 import com.tiriig.whatsdeleted.databinding.ItemDateBinding
 import com.tiriig.whatsdeleted.databinding.ItemMessageBinding
+import com.tiriig.whatsdeleted.utility.MediaKind
 import com.tiriig.whatsdeleted.utility.formatTime
+import com.tiriig.whatsdeleted.utility.openMediaFile
+import java.io.File
 
 class ChatDetailAdapter :
     ListAdapter<ChatItem, RecyclerView.ViewHolder>(ChatDetailDiffCallback()) {
@@ -67,13 +72,26 @@ class ChatDetailAdapter :
             )
             binding.message.text = chat.message
             binding.date.text = chat.dateTime.formatTime()
-            val mediaFile = chat.mediaPath?.let { java.io.File(it) }
-            if (mediaFile != null && mediaFile.exists()) {
-                binding.mediaThumb.isVisible = true
-                com.bumptech.glide.Glide.with(binding.mediaThumb).load(mediaFile).into(binding.mediaThumb)
+            bindMedia(chat.mediaPath?.let(::File)?.takeIf { it.exists() })
+        }
+
+        // Images and videos get a thumbnail (Glide decodes a video frame);
+        // audio has none, so videos and audio also get a text action.
+        private fun bindMedia(file: File?) {
+            val kind = file?.let { MediaKind.of(it) }
+            val hasThumb = kind == MediaKind.IMAGE || kind == MediaKind.VIDEO
+            binding.mediaThumb.isVisible = hasThumb
+            binding.mediaOpen.isVisible = kind == MediaKind.VIDEO || kind == MediaKind.AUDIO
+            if (hasThumb) {
+                Glide.with(binding.mediaThumb).load(file).into(binding.mediaThumb)
             } else {
-                binding.mediaThumb.isVisible = false
+                Glide.with(binding.mediaThumb).clear(binding.mediaThumb)
             }
+            if (kind == MediaKind.VIDEO) binding.mediaOpen.setText(R.string.open_video)
+            if (kind == MediaKind.AUDIO) binding.mediaOpen.setText(R.string.play_audio)
+            val open = file?.let { f -> View.OnClickListener { it.context.openMediaFile(f) } }
+            binding.mediaThumb.setOnClickListener(open)
+            binding.mediaOpen.setOnClickListener(open)
         }
     }
 

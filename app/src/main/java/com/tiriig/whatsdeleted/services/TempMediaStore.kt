@@ -8,131 +8,86 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Sentinela staging area for media files spotted by [MediaObserver].
- * Files are copied here the moment they appear on disk; ownership is a
- * best-effort heuristic (most recent sender), claiming happens on deletion.
+ * Sentinela media folder: copies of WhatsApp media spotted by [MediaObserver]
+ * or [MediaStoreWatcher], made the moment they appear on disk (WhatsApp
+ * removes the original when the sender deletes the message). A copy is
+ * linked to its message right away through `Chat.mediaPath`; copies with no
+ * known sender stay "ownerless" until a deletion claims them.
  */
 @Singleton
 class TempMediaStore @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    data class PendingMedia(
-        val file: File,
-        val stagedAt: Long,
-        var ownerUser: String?,
-        var ownerApp: String?,
-        var claimed: Boolean = false
-    )
-
     companion object {
         private const val TAG = "TempMediaStore"
         const val DIR_NAME = "sentinela_media"
         const val CLAIM_WINDOW_MS = 5L * 60 * 1000 // 5 min, matches "recent sender" rule
-        private const val MAX_TRACKED = 200
+        private const val MAX_SEEN = 500
     }
 
     private val lock = Any()
-    private val pending = mutableListOf<PendingMedia>()
 
-    fun pendingDir(): File =
+    // Source paths already copied: both watchers report the same file.
+    private val seenSources = LinkedHashSet<String>()
+
+    fun mediaDir(): File =
         File(context.getExternalFilesDir(null), DIR_NAME).apply { mkdirs() }
 
-    /** Copy [src] into the staging dir, attributing it to [ownerUser]/[ownerApp] (nullable = unknown). */
-    fun stage(src: File, ownerUser: String?, ownerApp: String?): File? = synchronized(lock) {
+    /** Copy [src] into the media dir; null if it was already copied or the copy failed. */
+    fun stage(src: File): File? = synchronized(lock) {
+        if (!src.isFile) return null
+        if (!seenSources.add(src.absolutePath)) return null
+        if (seenSources.size > MAX_SEEN) seenSources.remove(seenSources.first())
         try {
-            if (!src.isFile || !src.exists()) return null
             val safe = src.name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
-            val dest = File(pendingDir(), "${System.currentTimeMillis()}_$safe")
+            val dest = File(mediaDir(), "${System.currentTimeMillis()}_$safe")
             src.copyTo(dest, overwrite = false)
-            pending.add(PendingMedia(dest, System.currentTimeMillis(), ownerUser, ownerApp))
-            pruneTrackedLocked()
-            dest
         } catch (e: Exception) {
             Log.w(TAG, "stage failed for ${src.path}: $e")
             null
         }
     }
 
-    /**
-     * Newest unclaimed copy usable for (user, app): owned by them, or still
-     * ownerless (not attributed to another chat) and inside [windowMs].
-     */
-    fun claimFor(user: String, app: String, windowMs: Long = CLAIM_WINDOW_MS): File? =
+    /** Newest copy not linked to any message ([linked]) and staged within [windowMs]. */
+    fun claimOwnerless(linked: Set<String>, windowMs: Long = CLAIM_WINDOW_MS): File? =
         synchronized(lock) {
-            val now = System.currentTimeMillis()
-            val cand = pending
-                .filter {
-                    !it.claimed && it.file.exists() && now - it.stagedAt <= windowMs &&
-                        (it.ownerUser == null || (it.ownerUser == user && it.ownerApp == app))
-                }
-                .maxByOrNull { it.stagedAt }
-            cand?.claimed = true
-            cand?.file
+            val since = System.currentTimeMillis() - windowMs
+            mediaDir().listFiles()
+                ?.filter { it.lastModified() >= since && it.absolutePath !in linked }
+                ?.maxByOrNull { it.lastModified() }
         }
 
-    /**
-     * Contact opted out: drop staged copies owned by them. Ownerless copies
-     * staged in the last 60s are probably theirs too — best effort.
-     */
-    fun discardFor(user: String, app: String): Int = synchronized(lock) {
-        val now = System.currentTimeMillis()
-        val victims = pending.filter {
-            !it.claimed && it.file.exists() &&
-                ((it.ownerUser == user && it.ownerApp == app) ||
-                    (it.ownerUser == null && now - it.stagedAt <= 60_000))
+    fun delete(paths: Collection<String>) {
+        synchronized(lock) {
+            paths.forEach { File(it).delete() }
         }
-        var n = 0
-        victims.forEach {
-            try {
-                if (it.file.delete()) n++
-            } catch (_: Exception) { }
-            pending.remove(it)
-        }
-        n
     }
 
     /**
-     * Tarefa 4: delete orphans (files no Chat references via mediaPath) older
-     * than [retentionCutoff], then enforce [maxBytes] oldest-first.
-     * Files still referenced by the DB are never deleted here.
+     * Delete copies older than [retentionCutoff], then enforce [maxBytes]
+     * oldest-first. Copies in [keep] (media of deleted messages, the whole
+     * point of the app) are never deleted here.
      */
-    fun cleanup(retentionCutoff: Long, maxBytes: Long, referenced: Set<String>) {
+    fun cleanup(retentionCutoff: Long, maxBytes: Long, keep: Set<String>) {
         synchronized(lock) {
             try {
-                val dir = pendingDir()
-                val files = dir.listFiles()?.toList() ?: emptyList()
-                files.forEach { f ->
-                    if (!referenced.contains(f.absolutePath) && f.lastModified() < retentionCutoff) {
-                        try {
-                            f.delete()
-                        } catch (_: Exception) { }
-                    }
+                val dir = mediaDir()
+                dir.listFiles()?.forEach { f ->
+                    if (f.absolutePath !in keep && f.lastModified() < retentionCutoff) f.delete()
                 }
                 var total = dir.listFiles()?.sumOf { it.length() } ?: 0L
-                if (total > maxBytes) {
-                    dir.listFiles()
-                        ?.filter { !referenced.contains(it.absolutePath) }
-                        ?.sortedBy { it.lastModified() }
-                        ?.forEach { f ->
-                            if (total <= maxBytes) return@forEach
-                            try {
-                                val size = f.length()
-                                if (f.delete()) total -= size
-                            } catch (_: Exception) { }
-                        }
-                }
-                pending.removeAll { !it.file.exists() }
-                pruneTrackedLocked()
+                if (total <= maxBytes) return
+                dir.listFiles()
+                    ?.filter { it.absolutePath !in keep }
+                    ?.sortedBy { it.lastModified() }
+                    ?.forEach { f ->
+                        if (total <= maxBytes) return
+                        val size = f.length()
+                        if (f.delete()) total -= size
+                    }
             } catch (e: Exception) {
                 Log.w(TAG, "cleanup failed: $e")
             }
         }
-    }
-
-    private fun pruneTrackedLocked() {
-        if (pending.size <= MAX_TRACKED) return
-        pending.sortBy { it.stagedAt }
-        val overflow = pending.size - MAX_TRACKED
-        repeat(overflow) { pending.removeFirstOrNull() }
     }
 }

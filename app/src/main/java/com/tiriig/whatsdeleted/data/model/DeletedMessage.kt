@@ -8,4 +8,5 @@ data class DeletedMessage(
     val message: String = "",
     val isDeleted: Boolean = false,
     val dateTime: Long,
+    val mediaPath: String? = null,
 )

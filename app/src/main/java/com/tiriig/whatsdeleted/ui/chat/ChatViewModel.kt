@@ -14,11 +14,12 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import javax.inject.Inject
 
-/** One known conversation + its effective allowlist state (default ON). */
+/** One known conversation + its effective switches (default ON). */
 data class AllowedUi(
     val user: String,
     val app: String,
-    val allowed: Boolean
+    val allowed: Boolean,
+    val saveMessages: Boolean
 )
 
 @HiltViewModel
@@ -45,11 +46,8 @@ class ChatViewModel @Inject constructor(
         var allow: List<com.tiriig.whatsdeleted.data.model.AllowedContact> = emptyList()
         fun merge() {
             value = known.map { k ->
-                AllowedUi(
-                    k.user,
-                    k.app,
-                    allow.find { it.user == k.user && it.app == k.app }?.allowed ?: true
-                )
+                val row = allow.find { it.user == k.user && it.app == k.app }
+                AllowedUi(k.user, k.app, row?.allowed ?: true, row?.saveMessages ?: true)
             }
         }
         addSource(repository.knownConversations()) { known = it ?: emptyList(); merge() }
@@ -59,6 +57,20 @@ class ChatViewModel @Inject constructor(
     fun setAllowed(user: String, app: String, allowed: Boolean) {
         viewModelScope.launch {
             repository.setAllowed(user, app, allowed)
+        }
+    }
+
+    fun setSaveMessages(user: String, app: String, save: Boolean) {
+        viewModelScope.launch {
+            repository.setSaveMessages(user, app, save)
+        }
+    }
+
+    /** [ignore] also stops saving anything new from this contact. */
+    fun deleteConversation(user: String, app: String, ignore: Boolean) {
+        viewModelScope.launch {
+            if (ignore) repository.setSaveMessages(user, app, false)
+            repository.deleteConversation(user, app)
         }
     }
 }

@@ -8,7 +8,7 @@ import com.tiriig.whatsdeleted.data.model.Chat
 
 @Database(
     entities = [Chat::class, AllowedContact::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 2, to = 3)

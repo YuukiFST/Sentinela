@@ -16,6 +16,9 @@ interface AllowedContactDao {
     @Query("SELECT allowed FROM allowed_contact WHERE `user` = :user AND app = :app")
     suspend fun isAllowedRaw(user: String, app: String): Boolean?
 
+    @Query("SELECT * FROM allowed_contact WHERE `user` = :user AND app = :app")
+    suspend fun get(user: String, app: String): AllowedContact?
+
     @Query("SELECT * FROM allowed_contact ORDER BY `user` COLLATE NOCASE")
     fun listAll(): LiveData<List<AllowedContact>>
 

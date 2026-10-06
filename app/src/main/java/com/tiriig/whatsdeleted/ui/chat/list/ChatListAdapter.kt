@@ -17,7 +17,9 @@ import com.tiriig.whatsdeleted.utility.loadImage
 import com.tiriig.whatsdeleted.utility.name
 
 
-class ChatListAdapter : ListAdapter<Chat, ChatListAdapter.ViewHolder>(ChatListDiffCallback()) {
+class ChatListAdapter(
+    private val onLongPress: (Chat) -> Unit
+) : ListAdapter<Chat, ChatListAdapter.ViewHolder>(ChatListDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ViewHolder {
         val binding = ItemChatBinding.inflate(LayoutInflater.from(parent.context), parent, false)
@@ -40,6 +42,10 @@ class ChatListAdapter : ListAdapter<Chat, ChatListAdapter.ViewHolder>(ChatListDi
                     bundleOf("user" to currentData?.user,"app" to currentData?.app)
                 )
             }
+            binding.root.setOnLongClickListener {
+                currentData?.let(onLongPress)
+                true
+            }
         }
 
         @SuppressLint("SetTextI18n")
@@ -60,7 +66,7 @@ class ChatListAdapter : ListAdapter<Chat, ChatListAdapter.ViewHolder>(ChatListDi
 
     class ChatListDiffCallback : DiffUtil.ItemCallback<Chat>() {
         override fun areItemsTheSame(oldItem: Chat, newItem: Chat): Boolean {
-            return oldItem.user == newItem.user
+            return oldItem.user == newItem.user && oldItem.app == newItem.app
         }
 
         @SuppressLint("DiffUtilEquals")

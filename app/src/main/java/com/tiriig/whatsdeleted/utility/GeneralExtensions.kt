@@ -14,8 +14,11 @@ import com.tiriig.whatsdeleted.R
 
 
 // WhatsApp bundles unread messages from several chats under one summary
-// notification titled e.g. "12 new messages" - that's not a real contact.
-private val messageCountTitle = Regex("""^\d+\s+(new\s+)?messages?$""", RegexOption.IGNORE_CASE)
+// notification titled e.g. "12 new messages" / "12 novas mensagens" - that's not a real contact.
+private val messageCountTitle = Regex(
+    """^\d+\s+((new\s+)?messages?|(novas?\s+)?mensage(m|ns)(\s+novas?)?)$""",
+    RegexOption.IGNORE_CASE
+)
 
 fun String.isValidTitle(): Boolean {
     if (messageCountTitle.matches(this)) return false
@@ -46,8 +49,22 @@ fun String.isValidTitle(): Boolean {
 
 // WhatsApp/Telegram replace the notification body with this text once the
 // original message is deleted, Signal does the same with a trailing period.
+// The text follows the phone's language: a pt-BR phone never shows the English one.
+private val deletionNotices = setOf(
+    "this message was deleted",
+    "esta mensagem foi apagada",
+    "essa mensagem foi apagada",
+    "esta mensagem foi eliminada",
+    "se eliminó este mensaje",
+    "este mensaje fue eliminado"
+)
+
 fun String.isDeletionNotice(): Boolean {
-    return this == "This message was deleted" || this == "This message was deleted."
+    val normalized = trim()
+        .trimStart { !it.isLetter() } // WhatsApp may prefix an icon
+        .trimEnd('.')
+        .lowercase()
+    return normalized in deletionNotices
 }
 
 fun String.isValidApp(): Boolean {
