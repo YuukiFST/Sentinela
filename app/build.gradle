@@ -3,8 +3,6 @@ plugins {
     id 'kotlin-android'
     id 'kotlin-kapt'
     id 'dagger.hilt.android.plugin'
-    id 'com.google.gms.google-services'
-    id 'com.google.firebase.crashlytics'
 }
 
 android {
@@ -15,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId "com.tiriig.whatsdeleted"
+        applicationId "dev.vulto.sentinela"
         minSdk 23
         targetSdk 36
         versionCode 4
@@ -91,11 +89,6 @@ dependencies {
 
     //Gson
     implementation 'com.squareup.retrofit2:converter-gson:3.0.0'
-
-    //Firebase
-    implementation platform('com.google.firebase:firebase-bom:33.4.0')
-    implementation 'com.google.firebase:firebase-analytics-ktx'
-    implementation 'com.google.firebase:firebase-crashlytics-ktx'
 
     //Glide
     implementation 'com.github.bumptech.glide:glide:5.0.5'

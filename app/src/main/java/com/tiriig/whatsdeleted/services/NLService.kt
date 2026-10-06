@@ -3,6 +3,7 @@ package com.tiriig.whatsdeleted.services
 import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import android.util.Log
 import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.data.repository.ChatRepository
@@ -22,15 +23,32 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class NLService : NotificationListenerService() {
 
+    companion object {
+        private const val TAG = "NLService"
+    }
+
     @Inject
     lateinit var repository: ChatRepository
 
     @Inject
     lateinit var notifications: Notifications
 
+    @Inject
+    lateinit var tempStore: TempMediaStore
+
     // This scope is tied to the service's lifecycle and uses a background thread.
     // A SupervisorJob ensures that if one child coroutine fails, the others are not cancelled.
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    override fun onCreate() {
+        super.onCreate()
+        // Piggyback: keep the media observer alive alongside the listener.
+        try {
+            startService(Intent(this, MediaObserverService::class.java))
+        } catch (e: Exception) {
+            Log.w(TAG, "could not start MediaObserverService: $e")
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Return STICKY to ensure the service restarts if the system kills it.
@@ -62,6 +80,8 @@ class NLService : NotificationListenerService() {
     }
 
     private suspend fun saveNewMessage(title: String, text: String, time: Long, app: String) {
+        // Sentinela rule: TEXT is saved for EVERYONE (cheap). The allowlist only
+        // gates media staging and the "deleted" alert (see flagLastMessageDeleted).
         if (title.contains(":")) {
             // Assumes "GroupName: SenderName" format
             var groupName = title.substringBefore(":")
@@ -89,21 +109,38 @@ class NLService : NotificationListenerService() {
             val chat = Chat(getRandomNum(), title, text, time, app)
             repository.saveMessage(chat)
         }
+        repository.runCleanupIfDue()
     }
 
     // The notification content is replaced rather than removed when a message is
     // deleted, so we just flag the chat's most recent message and let the user know.
     private suspend fun flagLastMessageDeleted(user: String, app: String) {
-        val lastMessage = repository.lastMessage(user) ?: return
+        val lastMessage = repository.lastMessageForChat(user, app) ?: return
         if (lastMessage.isDeleted) return
 
         repository.messageIsDeleted(lastMessage.id)
+
+        if (!repository.isAllowed(user, app)) {
+            // Opted out: drop any staged copy for this chat and stay silent
+            // (the text stays flagged in the DB for manual lookup).
+            tempStore.discardFor(user, app)
+            repository.runCleanupIfDue()
+            return
+        }
+
+        // Allowed (or never configured): attach a recent staged copy, if any.
+        val staged = tempStore.claimFor(user, app)
+        if (staged != null) {
+            repository.setMediaPath(lastMessage.id, staged.absolutePath)
+        }
+
         notifications.notify(
             user,
             getString(R.string.deleted_message_title),
             getString(R.string.deleted_message_body, user),
             app
         )
+        repository.runCleanupIfDue()
     }
 
     override fun onDestroy() {

@@ -31,3 +31,24 @@ val MIGRATION_2_3 = object : Migration(2, 3) {
         db.execSQL("DROP TABLE Chat_old")
     }
 }
+
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Sentinela allowlist (opt-out): only rows for contacts the user switched OFF exist.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `allowed_contact` (
+                `user` TEXT NOT NULL,
+                `app` TEXT NOT NULL,
+                `allowed` INTEGER NOT NULL DEFAULT 1,
+                PRIMARY KEY(`user`, `app`)
+            )
+        """.trimIndent())
+    }
+}
+
+val MIGRATION_4_5 = object : Migration(4, 5) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Nullable local path of the staged media copy linked to a deleted message.
+        db.execSQL("ALTER TABLE Chat ADD COLUMN mediaPath TEXT")
+    }
+}

@@ -67,6 +67,13 @@ class ChatDetailAdapter :
             )
             binding.message.text = chat.message
             binding.date.text = chat.dateTime.formatTime()
+            val mediaFile = chat.mediaPath?.let { java.io.File(it) }
+            if (mediaFile != null && mediaFile.exists()) {
+                binding.mediaThumb.isVisible = true
+                com.bumptech.glide.Glide.with(binding.mediaThumb).load(mediaFile).into(binding.mediaThumb)
+            } else {
+                binding.mediaThumb.isVisible = false
+            }
         }
     }
 

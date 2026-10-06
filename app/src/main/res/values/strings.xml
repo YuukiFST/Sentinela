@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">WhatsDeleted</string>
+    <string name="app_name">Sentinela</string>
     <string name="default_notification_channel_id">101</string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
@@ -16,4 +16,12 @@
     <string name="notification_notice">This allow the app to backup your notifications and messages in case they are deleted</string>
     <string name="notification_reader">Notification reader</string>
     <string name="enable">Enable</string>
+    <string name="allowlist_title">Monitoramento de mídia</string>
+    <string name="allowlist_sub">Texto é salvo de todos. Desligue um contato para não guardar mídia nem alertar quando ele apagar mensagem.</string>
+    <string name="allowlist_empty">Nenhuma conversa capturada ainda</string>
+    <string name="media_perm_title">Backup de mídia</string>
+    <string name="media_perm_notice">Opcional: permite copiar fotos, vídeos e áudios recebidos para recuperar os apagados</string>
+    <string name="media_perm_allow">Permitir mídia</string>
+    <string name="media_perm_granted">Permissão de mídia concedida</string>
+    <string name="attached_media">Mídia recuperada</string>
 </resources>

@@ -1,13 +1,18 @@
 package com.tiriig.whatsdeleted.ui.intro
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import com.github.appintro.SlidePolicy
@@ -25,6 +30,11 @@ class IntroPermissionFragment : Fragment(), SlidePolicy {
     private var _binding: FragmentIntroPermissionBinding? = null
     private val binding get() = _binding!!
 
+    private val mediaPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            refreshMediaRow()
+        }
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -38,6 +48,38 @@ class IntroPermissionFragment : Fragment(), SlidePolicy {
         binding.enableBtn.isVisible = !isNotificationServiceEnabled()
         binding.enableBtn.setOnClickListener {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
+        }
+        binding.mediaBtn.setOnClickListener {
+            mediaPermissionLauncher.launch(mediaPermissions())
+        }
+        refreshMediaRow()
+    }
+
+    /** Media perms needed by the Sentinela MediaObserver (optional: text backup works without them). */
+    private fun mediaPermissions(): Array<String> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_AUDIO
+            )
+        } else {
+            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    private fun hasMediaPermission(): Boolean {
+        return mediaPermissions().all {
+            ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun refreshMediaRow() {
+        if (hasMediaPermission()) {
+            binding.mediaBtn.hide()
+            binding.mediaStateTv.text = getString(com.tiriig.whatsdeleted.R.string.media_perm_granted)
+        } else {
+            binding.mediaBtn.isVisible = true
         }
     }
 

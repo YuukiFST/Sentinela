@@ -2,6 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Legacy media access (Android 12 and below) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Scoped media access (Android 13+) -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
     <application
         android:name=".WhatsDeleted"
@@ -43,9 +49,9 @@
                 android:value="ongoing|silent" />
         </service>
 
-<!--        Disable Crashlytics collection-->
-        <meta-data
-            android:name="firebase_crashlytics_collection_enabled"
-            android:value="false" />
+        <!-- Sentinela: watches WhatsApp media dirs and stages new files (see MediaObserverService) -->
+        <service
+            android:name="com.tiriig.whatsdeleted.services.MediaObserverService"
+            android:exported="false" />
     </application>
 </manifest>

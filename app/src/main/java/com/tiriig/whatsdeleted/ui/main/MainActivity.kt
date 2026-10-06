@@ -20,6 +20,7 @@ import androidx.navigation.ui.setupActionBarWithNavController
 import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.databinding.ActivityMainBinding
 import com.tiriig.whatsdeleted.services.NLService
+import com.tiriig.whatsdeleted.services.MediaObserverService
 import dagger.hilt.android.AndroidEntryPoint
 
 
@@ -49,6 +50,10 @@ class MainActivity : AppCompatActivity() {
         //Start the service
         val intent = Intent(applicationContext, NLService::class.java)
         startService(intent)
+        // Sentinela media observer piggybacks on the listener (also started from NLService itself).
+        try {
+            startService(Intent(applicationContext, MediaObserverService::class.java))
+        } catch (_: Exception) { }
 
         //set up fragment Navigation
         navHost =

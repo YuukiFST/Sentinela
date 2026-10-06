@@ -17,4 +17,6 @@ data class Chat(
     val app: String,
     val isDeleted: Boolean = false,
     val isGroup: Boolean = false,
+    /** Local staged copy of media attached on deletion (nullable, added in v5). */
+    val mediaPath: String? = null,
 )
