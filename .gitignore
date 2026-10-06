@@ -40,6 +40,14 @@ render.experimental.xml
 # Google Services (e.g. APIs or Firebase)
 google-services.json
 
+# Agent harness memory (per-machine, never commit)
+.claude/
+.opencode/
+.pi/
+omoikane/
+AGENTS.md
+/tests/
+
 # Android Profiling
 *.hprof
 
