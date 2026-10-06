@@ -30,15 +30,18 @@ class ChatRepository @Inject constructor(
     companion object {
         private const val TAG = "ChatRepository"
         private const val CLEANUP_INTERVAL_MS = 24L * 60 * 60 * 1000 // 1x/dia
-        /** Re-posts of one notification arrive within seconds; the same text sent
-         * minutes later is a new message and must be kept. */
-        const val DEDUP_WINDOW_MS = 10_000L
     }
 
     // WhatsApp/Telegram often re-post the same notification for one message within
     // milliseconds of each other, so the dedup check below needs to run atomically -
     // otherwise two overlapping saves both read "no duplicate yet" and both insert.
     private val saveMutex = Mutex()
+
+    companion object {
+        /** Re-posts of one notification arrive within seconds; the same text sent
+         * minutes later is a new message and must be kept. */
+        const val DEDUP_WINDOW_MS = 10_000L
+    }
 
     suspend fun saveMessage(chat: Chat) {
         withContext(Dispatchers.IO) {
