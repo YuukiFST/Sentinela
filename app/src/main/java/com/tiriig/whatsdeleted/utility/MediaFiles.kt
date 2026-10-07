@@ -26,11 +26,41 @@ enum class MediaKind(val extensions: Set<String>, val mimeFallback: String) {
 /**
  * What kind of viewable content hides behind a notification placeholder
  * ("Sent a photo"). Null for plain text and for placeholders with no capture
- * path (calls, documents, locations). Stickers and GIFs render as images but
- * only ever come from the notification thumbnail: WhatsApp keeps those files
- * in private storage, invisible to file and MediaStore watchers.
+ * path (calls, documents, locations). WhatsApp posts no preview for stickers
+ * and GIFs, so those come only from their media folders (see [whatsAppFolders]),
+ * which sit behind `.nomedia` and need all-files access.
  */
 enum class PlaceholderKind { PHOTO, VIDEO, AUDIO, STICKER, GIF }
+
+/**
+ * WhatsApp media sub-folder names per kind; WhatsApp Business prefixes them
+ * with "WhatsApp Business" ("WhatsApp Business Stickers").
+ */
+fun PlaceholderKind.whatsAppFolders(): List<String> = when (this) {
+    PlaceholderKind.PHOTO -> listOf("Images")
+    PlaceholderKind.VIDEO -> listOf("Video")
+    PlaceholderKind.AUDIO -> listOf("Voice Notes", "Audio")
+    PlaceholderKind.STICKER -> listOf("Stickers")
+    PlaceholderKind.GIF -> listOf("Animated Gifs")
+}
+
+/**
+ * Which placeholder a WhatsApp media file answers. The folder decides first:
+ * a sticker is a .webp image and a GIF is an .mp4, so the extension alone would
+ * hand them to a photo or video message. Null for non-media files.
+ * Example: `File(".../WhatsApp Stickers/STK-1.webp").arrivingKind() == STICKER`
+ */
+fun File.arrivingKind(): PlaceholderKind? {
+    val path = invariantSeparatorsPath
+    if (" Stickers/" in path) return PlaceholderKind.STICKER
+    if (" Animated Gifs/" in path) return PlaceholderKind.GIF
+    return when (MediaKind.of(this)) {
+        MediaKind.IMAGE -> PlaceholderKind.PHOTO
+        MediaKind.VIDEO -> PlaceholderKind.VIDEO
+        MediaKind.AUDIO -> PlaceholderKind.AUDIO
+        null -> null
+    }
+}
 
 private val callWords = listOf("call", "chamada", "ligação", "ligacao")
 

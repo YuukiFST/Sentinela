@@ -30,9 +30,13 @@ interface UserDao {
     @Query("SELECT * from chat where dateTime >= :since order by dateTime DESC LIMIT 1")
     fun getMostRecentSince(since: Long): Chat?
 
-    /** Newest message of the chat since [since] that has no media linked yet. */
-    @Query("SELECT id FROM chat WHERE `user` = :user AND app = :app AND dateTime >= :since AND mediaPath IS NULL ORDER BY dateTime DESC LIMIT 1")
-    suspend fun getMessageAwaitingMedia(user: String, app: String, since: Long): String?
+    /**
+     * Messages of the chat since [since] still open for a real file, newest
+     * first: no media yet, or only a notification preview (`*_notif.*`,
+     * see TempMediaStore.PREVIEW_NAME), which the full file replaces.
+     */
+    @Query("SELECT id,message,isDeleted,dateTime,mediaPath FROM chat WHERE `user` = :user AND app = :app AND dateTime >= :since AND (mediaPath IS NULL OR mediaPath LIKE '%_notif.%') ORDER BY dateTime DESC")
+    suspend fun getMessagesAwaitingMedia(user: String, app: String, since: Long): List<DeletedMessage>
 
     /**
      * Conversations with messages plus those with settings, so a contact
@@ -46,6 +50,12 @@ interface UserDao {
 
     @Query("UPDATE chat set mediaPath = :path where id = :id")
     suspend fun setMediaPath(id: String, path: String?)
+
+    @Query("UPDATE chat set mediaPath = :path where id = :id AND mediaPath IS NULL")
+    suspend fun setMediaPathIfEmpty(id: String, path: String)
+
+    @Query("SELECT mediaPath FROM chat WHERE id = :id")
+    suspend fun getMediaPath(id: String): String?
 
     @Query("SELECT mediaPath FROM chat WHERE mediaPath IS NOT NULL")
     suspend fun getAllMediaPaths(): List<String>

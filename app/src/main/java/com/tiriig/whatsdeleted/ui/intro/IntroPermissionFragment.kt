@@ -1,10 +1,7 @@
 package com.tiriig.whatsdeleted.ui.intro
 
-import android.Manifest
 import android.content.ComponentName
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.TextUtils
@@ -12,14 +9,18 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import com.github.appintro.SlidePolicy
 import com.tiriig.whatsdeleted.databinding.FragmentIntroPermissionBinding
+import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.ui.main.MainActivity
 import com.tiriig.whatsdeleted.utility.finishedIntro
+import com.tiriig.whatsdeleted.utility.hasFullMediaAccess
+import com.tiriig.whatsdeleted.utility.hasMediaPermissions
 import com.tiriig.whatsdeleted.utility.hide
+import com.tiriig.whatsdeleted.utility.mediaPermissions
+import com.tiriig.whatsdeleted.utility.openAllFilesAccessSettings
 import com.tiriig.whatsdeleted.utility.startActivity
 import com.tiriig.whatsdeleted.utility.toast
 import dagger.hilt.android.AndroidEntryPoint
@@ -50,37 +51,27 @@ class IntroPermissionFragment : Fragment(), SlidePolicy {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
         }
         binding.mediaBtn.setOnClickListener {
-            mediaPermissionLauncher.launch(mediaPermissions())
+            if (!requireContext().hasMediaPermissions()) {
+                mediaPermissionLauncher.launch(mediaPermissions())
+            } else {
+                requireContext().openAllFilesAccessSettings()
+            }
         }
         refreshMediaRow()
     }
 
-    /** Media perms needed by the Sentinela MediaObserver (optional: text backup works without them). */
-    private fun mediaPermissions(): Array<String> {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            arrayOf(
-                Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.READ_MEDIA_AUDIO
-            )
-        } else {
-            arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
-        }
-    }
-
-    private fun hasMediaPermission(): Boolean {
-        return mediaPermissions().all {
-            ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
-        }
-    }
-
+    /** Optional (text backup works without): runtime media permissions first, then all-files access. */
     private fun refreshMediaRow() {
-        if (hasMediaPermission()) {
+        val context = requireContext()
+        if (context.hasFullMediaAccess()) {
             binding.mediaBtn.hide()
-            binding.mediaStateTv.text = getString(com.tiriig.whatsdeleted.R.string.media_perm_granted)
-        } else {
-            binding.mediaBtn.isVisible = true
+            binding.mediaStateTv.text = getString(R.string.media_perm_granted)
+            return
         }
+        val runtimeGranted = context.hasMediaPermissions()
+        binding.mediaBtn.isVisible = true
+        binding.mediaBtn.setText(if (runtimeGranted) R.string.media_perm_files_allow else R.string.media_perm_allow)
+        binding.mediaStateTv.setText(if (runtimeGranted) R.string.media_perm_files_notice else R.string.media_perm_notice)
     }
 
     override val isPolicyRespected: Boolean
@@ -92,6 +83,8 @@ class IntroPermissionFragment : Fragment(), SlidePolicy {
 
     override fun onResume() {
         super.onResume()
+        // Back from the "All files access" settings screen.
+        refreshMediaRow()
         if (isPolicyRespected) {
             binding.enableBtn.hide()
             requireActivity().startActivity(MainActivity::class.java)

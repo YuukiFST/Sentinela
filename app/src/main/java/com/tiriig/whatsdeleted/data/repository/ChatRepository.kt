@@ -11,7 +11,9 @@ import com.tiriig.whatsdeleted.data.model.DeletedMessage
 import com.tiriig.whatsdeleted.data.model.KnownConversation
 import com.tiriig.whatsdeleted.services.TempMediaStore
 import com.tiriig.whatsdeleted.utility.CleanupPrefs
+import com.tiriig.whatsdeleted.utility.PlaceholderKind
 import com.tiriig.whatsdeleted.utility.isValidTitle
+import com.tiriig.whatsdeleted.utility.placeholderKind
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -107,14 +109,46 @@ class ChatRepository @Inject constructor(
         }
     }
 
-    /**
-     * Links a fresh media copy to the newest message of (user, app) since
-     * [since] that has none yet. No such message: the copy stays ownerless.
-     */
-    suspend fun linkMediaToRecentMessage(user: String, app: String, since: Long, path: String) {
+    /** Links a notification preview unless a real file got there first (the watcher can win the race). */
+    suspend fun linkPreview(id: String, path: String) {
         withContext(Dispatchers.IO) {
-            val id = database.userDao().getMessageAwaitingMedia(user, app, since) ?: return@withContext
+            database.userDao().setMediaPathIfEmpty(id, path)
+        }
+    }
+
+    /**
+     * Links the real file [path] to message [id] unless it already has one;
+     * a notification preview there is replaced and its copy deleted.
+     */
+    suspend fun linkFile(id: String, path: String) {
+        withContext(Dispatchers.IO) {
+            val current = database.userDao().getMediaPath(id)
+            if (current == path) return@withContext
+            if (current != null && !TempMediaStore.isPreview(current)) return@withContext
             database.userDao().setMediaPath(id, path)
+            current?.let { tempStore.delete(listOf(it)) }
+        }
+    }
+
+    /**
+     * Links a fresh media copy of [kind] to the newest message of (user, app)
+     * since [since] with that placeholder ("📷 Foto" takes a photo, "Figurinha"
+     * a sticker), replacing a notification preview. Plain text after the photo
+     * no longer steals it. No such message: the copy stays ownerless.
+     */
+    suspend fun linkMediaToRecentMessage(
+        user: String,
+        app: String,
+        since: Long,
+        path: String,
+        kind: PlaceholderKind
+    ) {
+        withContext(Dispatchers.IO) {
+            val target = database.userDao().getMessagesAwaitingMedia(user, app, since)
+                .firstOrNull { placeholderKind(it.message) == kind }
+                ?: return@withContext
+            database.userDao().setMediaPath(target.id, path)
+            target.mediaPath?.let { tempStore.delete(listOf(it)) }
         }
     }
 

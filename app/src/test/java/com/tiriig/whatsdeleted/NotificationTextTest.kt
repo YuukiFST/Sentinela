@@ -1,12 +1,14 @@
 package com.tiriig.whatsdeleted
 
 import com.tiriig.whatsdeleted.utility.isDeletionNotice
+import com.tiriig.whatsdeleted.utility.arrivingKind
 import com.tiriig.whatsdeleted.utility.isValidTitle
 import com.tiriig.whatsdeleted.utility.PlaceholderKind
 import com.tiriig.whatsdeleted.utility.placeholderKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.io.File
 
 // The deletion notice follows the phone's language; matching only English
 // meant a pt-BR phone never flagged a deleted message.
@@ -72,5 +74,27 @@ class NotificationTextTest {
         ).forEach { text ->
             assertNull(text, placeholderKind(text))
         }
+    }
+
+    // A late WhatsApp file is linked to the message whose placeholder equals the
+    // file's kind. By extension alone a sticker (.webp) went to a photo and a GIF
+    // (.mp4) to a video, and "ok" sent after "📷 Foto" took the photo.
+    @Test
+    fun arrivingFileMatchesItsPlaceholder() {
+        val media = "/storage/emulated/0/Android/media/com.whatsapp/WhatsApp/Media"
+        val business = "/storage/emulated/0/Android/media/com.whatsapp.w4b/WhatsApp Business/Media"
+        val cases = mapOf(
+            "$media/WhatsApp Images/IMG-20261007-WA0001.jpg" to "📷 Foto",
+            "$media/WhatsApp Video/VID-20261007-WA0002.mp4" to "🎥 Vídeo",
+            "$media/WhatsApp Voice Notes/202641/PTT-20261007-WA0003.opus" to "🎤 Mensagem de voz (0:05)",
+            "$media/WhatsApp Stickers/STK-20261007-WA0004.webp" to "Maria: Figurinha",
+            "$media/WhatsApp Animated Gifs/VID-20261007-WA0005.mp4" to "GIF",
+            "$business/WhatsApp Business Stickers/STK-20261007-WA0006.webp" to "Sent a sticker",
+        )
+        cases.forEach { (path, message) ->
+            assertEquals(path, placeholderKind(message), File(path).arrivingKind())
+        }
+        assertNull(placeholderKind("ok"))
+        assertNull(File("$media/WhatsApp Documents/report.pdf").arrivingKind())
     }
 }

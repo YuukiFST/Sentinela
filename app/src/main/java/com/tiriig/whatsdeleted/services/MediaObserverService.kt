@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.tiriig.whatsdeleted.data.repository.ChatRepository
+import com.tiriig.whatsdeleted.utility.arrivingKind
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,12 +68,13 @@ class MediaObserverService : Service() {
     private fun onMediaFile(file: File) {
         serviceScope.launch(copyDispatcher) {
             try {
+                val kind = file.arrivingKind() ?: return@launch
                 val since = System.currentTimeMillis() - ATTRIBUTION_WINDOW_MS
                 val recent = repository.mostRecentSince(since)
                 if (recent != null && !repository.isAllowed(recent.user, recent.app)) return@launch
                 val copy = tempStore.stage(file) ?: return@launch
                 if (recent == null) return@launch
-                repository.linkMediaToRecentMessage(recent.user, recent.app, since, copy.absolutePath)
+                repository.linkMediaToRecentMessage(recent.user, recent.app, since, copy.absolutePath, kind)
             } catch (e: Exception) {
                 Log.w(TAG, "stage failed: $e")
             }

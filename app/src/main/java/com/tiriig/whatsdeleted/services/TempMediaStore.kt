@@ -24,12 +24,20 @@ class TempMediaStore @Inject constructor(
         const val DIR_NAME = "sentinela_media"
         const val CLAIM_WINDOW_MS = 5L * 60 * 1000 // 5 min, matches "recent sender" rule
         private const val MAX_SEEN = 500
+
+        // File-name stem of notification previews. A real file arriving later
+        // replaces a preview link (see UserDao.getMessagesAwaitingMedia).
+        const val PREVIEW_NAME = "notif"
+
+        /** True for a notification preview copy, which a real file may replace. */
+        fun isPreview(path: String): Boolean = "_$PREVIEW_NAME." in File(path).name
     }
 
     private val lock = Any()
 
-    // Source paths already copied: both watchers report the same file.
-    private val seenSources = LinkedHashSet<String>()
+    // Source path -> its copy (null while copying): both watchers and the
+    // notification path report the same file, and a late reporter needs the copy.
+    private val seenSources = LinkedHashMap<String, File?>()
 
     // Burst uniqueness: currentTimeMillis collides within one ms burst.
     private val nameCounter = AtomicLong(0)
@@ -39,10 +47,22 @@ class TempMediaStore @Inject constructor(
 
     /** Reserve [key] once; false when this source was already staged. Lock held briefly. */
     fun tryReserve(key: String): Boolean = synchronized(lock) {
-        if (!seenSources.add(key)) return false
-        if (seenSources.size > MAX_SEEN) seenSources.remove(seenSources.first())
+        if (seenSources.containsKey(key)) return false
+        seenSources[key] = null
+        if (seenSources.size > MAX_SEEN) seenSources.remove(seenSources.keys.first())
         true
     }
+
+    /** Store the finished copy of [key]; a failed copy drops the key so a retry can stage it. */
+    private fun record(key: String, copy: File?) {
+        synchronized(lock) {
+            if (copy == null) seenSources.remove(key) else seenSources[key] = copy
+        }
+    }
+
+    /** Copy already made of source [key] by any path, while it still exists. */
+    fun copyOf(key: String): File? =
+        synchronized(lock) { seenSources[key] }?.takeIf { it.isFile }
 
     private fun uniqueDest(safe: String): File =
         File(mediaDir(), "${System.currentTimeMillis()}_${System.nanoTime()}_${nameCounter.getAndIncrement()}_$safe")
@@ -53,7 +73,7 @@ class TempMediaStore @Inject constructor(
         // Dedup reservation under a brief lock; the copy itself runs unlocked so
         // a burst of photos does not queue behind one large video.
         if (!tryReserve(src.absolutePath)) return null
-        return try {
+        val copy = try {
             val safe = src.name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
             val dest = uniqueDest(safe)
             src.copyTo(dest, overwrite = false)
@@ -62,13 +82,15 @@ class TempMediaStore @Inject constructor(
             Log.w(TAG, "stage failed for ${src.path}: $e")
             null
         }
+        record(src.absolutePath, copy)
+        return copy
     }
 
     /** Persist notification preview pixels (photo/video/sticker/GIF thumbnails). */
     fun stageBitmap(bitmap: android.graphics.Bitmap): File? {
         // Unique dest per call, no shared state: runs unlocked for burst throughput.
         return try {
-            val dest = uniqueDest("notif.jpg")
+            val dest = uniqueDest("$PREVIEW_NAME.jpg")
             dest.outputStream().use { out ->
                 if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)) {
                     return null
@@ -82,19 +104,26 @@ class TempMediaStore @Inject constructor(
     }
 
     /** Copy an open stream (e.g. a MediaStore row) into the media dir. */
-    fun stageStream(input: java.io.InputStream, ext: String, sourceKey: String? = null): File? {
+    fun stageStream(
+        input: java.io.InputStream,
+        ext: String,
+        sourceKey: String? = null,
+        name: String = "store"
+    ): File? {
         // Shared dedup with [stage] when the MediaStore row maps to a known path,
         // so the notification path and the watchers do not copy the same file twice.
         if (sourceKey != null && !tryReserve(sourceKey)) return null
-        return try {
+        val copy = try {
             val safeExt = ext.replace(Regex("[^A-Za-z0-9]"), "").take(5).ifEmpty { "bin" }
-            val dest = uniqueDest("store.$safeExt")
+            val dest = uniqueDest("$name.$safeExt")
             dest.outputStream().use { out -> input.copyTo(out, bufferSize = 256 * 1024) }
             dest
         } catch (e: Exception) {
             Log.w(TAG, "stageStream failed: $e")
             null
         }
+        if (sourceKey != null) record(sourceKey, copy)
+        return copy
     }
 
     /** Newest copy not linked to any message ([linked]) and staged within [windowMs]. */

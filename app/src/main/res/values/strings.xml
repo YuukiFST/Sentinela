@@ -29,8 +29,10 @@
     <string name="media_no_viewer">Nenhum app para abrir esta mídia</string>
     <string name="allowlist_empty">Nenhuma conversa capturada ainda</string>
     <string name="media_perm_title">Backup de mídia</string>
-    <string name="media_perm_notice">Opcional: permite copiar fotos, vídeos e áudios recebidos para recuperar os apagados</string>
+    <string name="media_perm_notice">Opcional: permite copiar fotos, vídeos, áudios, figurinhas e GIFs recebidos para recuperar os apagados</string>
     <string name="media_perm_allow">Permitir mídia</string>
+    <string name="media_perm_files_notice">Falta o acesso a todos os arquivos: sem ele figurinhas, GIFs e áudios de voz não são salvos</string>
+    <string name="media_perm_files_allow">Permitir arquivos</string>
     <string name="media_perm_granted">Permissão de mídia concedida</string>
     <string name="attached_media">Mídia recuperada</string>
     <string name="message_copied">Mensagem copiada</string>

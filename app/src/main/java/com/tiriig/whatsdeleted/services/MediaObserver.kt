@@ -18,7 +18,8 @@ class MediaObserver(
     companion object {
         private const val TAG = "MediaObserver"
 
-        private fun candidateRoots(): List<File> {
+        /** WhatsApp and WhatsApp Business media roots, legacy and Android 11+ scoped. */
+        fun candidateRoots(): List<File> {
             val ext = Environment.getExternalStorageDirectory()
             return listOf(
                 File(ext, "WhatsApp/Media"),

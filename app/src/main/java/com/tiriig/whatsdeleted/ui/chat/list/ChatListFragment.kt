@@ -1,5 +1,6 @@
 package com.tiriig.whatsdeleted.ui.chat.list
 
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -21,10 +22,14 @@ import androidx.navigation.fragment.findNavController
 import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.databinding.FragmentChatListBinding
+import com.tiriig.whatsdeleted.services.MediaObserverService
 import com.tiriig.whatsdeleted.ui.chat.ChatViewModel
+import com.tiriig.whatsdeleted.utility.canReadWhatsAppFolders
+import com.tiriig.whatsdeleted.utility.hasFullMediaAccess
 import com.tiriig.whatsdeleted.utility.hasMediaPermissions
 import com.tiriig.whatsdeleted.utility.hide
 import com.tiriig.whatsdeleted.utility.mediaPermissions
+import com.tiriig.whatsdeleted.utility.openAllFilesAccessSettings
 import com.tiriig.whatsdeleted.utility.show
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -55,7 +60,11 @@ class ChatListFragment : Fragment() {
         setupMenu()
         fetchChat()
         binding.mediaBannerBtn.setOnClickListener {
-            mediaPermissionLauncher.launch(mediaPermissions())
+            if (!requireContext().hasMediaPermissions()) {
+                mediaPermissionLauncher.launch(mediaPermissions())
+            } else {
+                requireContext().openAllFilesAccessSettings()
+            }
         }
         refreshMediaBanner()
         setVersionLabel()
@@ -67,9 +76,27 @@ class ChatListFragment : Fragment() {
         if (_binding != null) refreshMediaBanner()
     }
 
-    /** Full-res photo/video/audio capture needs these; text backup works without. */
+    /**
+     * Media capture needs the runtime permissions, then "All files access" for
+     * stickers/GIFs/voice notes; text backup works without either. One step at
+     * a time: the banner asks for whichever is still missing.
+     */
     private fun refreshMediaBanner() {
-        binding.mediaBanner.isVisible = !requireContext().hasMediaPermissions()
+        val context = requireContext()
+        val runtimeGranted = context.hasMediaPermissions()
+        binding.mediaBanner.isVisible = !runtimeGranted || !context.canReadWhatsAppFolders()
+        binding.mediaBannerText.setText(
+            if (runtimeGranted) R.string.media_perm_files_notice else R.string.media_perm_notice
+        )
+        binding.mediaBannerBtn.setText(
+            if (runtimeGranted) R.string.media_perm_files_allow else R.string.media_perm_allow
+        )
+        // Watchers only attach to folders readable at start; restart after a grant.
+        if (context.hasFullMediaAccess()) {
+            try {
+                context.startService(Intent(context, MediaObserverService::class.java))
+            } catch (_: Exception) { }
+        }
     }
 
     private fun setVersionLabel() {

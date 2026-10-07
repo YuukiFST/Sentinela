@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -27,6 +28,11 @@ class NLService : NotificationListenerService() {
 
     companion object {
         private const val TAG = "NLService"
+
+        // 15 x 2s = 30s: covers a sticker, GIF, photo or voice note download on
+        // a slow connection; larger videos are still caught by MediaStoreWatcher.
+        private const val FILE_POLL_ATTEMPTS = 15
+        private const val FILE_POLL_INTERVAL_MS = 2_000L
     }
 
     @Inject
@@ -201,11 +207,7 @@ class NLService : NotificationListenerService() {
         if (pending.isNotEmpty()) attachBurstMediaAsync(pending, user, app, sbn)
     }
 
-    /**
-     * Async media attach for one message: fresh MediaStore file first
-     * (full-res/playable), then the notification thumbnail (only path for
-     * stickers/GIFs). Plain text and opted-out contacts get nothing.
-     */
+    /** Async media attach for one message; see [attachMedia]. */
     private fun attachMediaAsync(
         id: String,
         user: String,
@@ -216,20 +218,18 @@ class NLService : NotificationListenerService() {
         serviceScope.launch {
             try {
                 if (!repository.isAllowed(user, app)) return@launch
-                val path = arrivingMedia.storedCopyPath(applicationContext, kind)
-                    ?: arrivingMedia.thumbnailPath(sbn, applicationContext)
-                    ?: return@launch
-                repository.setMediaPath(id, path)
-            } catch (_: Exception) {
+                attachMedia(listOf(id), kind, sbn)
+            } catch (e: Exception) {
+                Log.w(TAG, "attach media failed: $e")
             }
         }
     }
 
     /**
-     * Async batch attach for a digest burst: one MediaStore scan per kind,
-     * newest message takes the newest file. Newest-first also protects the new
-     * line from digest overlap: re-posted old lines are dedup-skipped on insert,
-     * so their setMediaPath hits zero rows while the new line keeps its file.
+     * Async batch attach for a digest burst, one job per kind so a slow video
+     * does not hold back the stickers. Newest message takes the newest file.
+     * Newest-first also protects the new line from digest overlap: re-posted
+     * old lines are dedup-skipped on insert, so their link hits zero rows.
      */
     private fun attachBurstMediaAsync(
         pendingOldestFirst: List<Pair<String, PlaceholderKind>>,
@@ -237,21 +237,47 @@ class NLService : NotificationListenerService() {
         app: String,
         sbn: StatusBarNotification
     ) {
-        serviceScope.launch {
-            try {
-                if (!repository.isAllowed(user, app)) return@launch
-                val byKind = pendingOldestFirst.asReversed()
-                    .groupBy(keySelector = { it.second }, valueTransform = { it.first })
-                for ((kind, idsNewestFirst) in byKind) {
-                    val paths = arrivingMedia.storedCopyPaths(applicationContext, kind, idsNewestFirst.size)
-                    idsNewestFirst.forEachIndexed { index, id ->
-                        val path = paths.getOrNull(index)
-                            ?: arrivingMedia.thumbnailPath(sbn, applicationContext)
-                            ?: return@forEachIndexed
-                        repository.setMediaPath(id, path)
-                    }
+        val byKind = pendingOldestFirst.asReversed()
+            .groupBy(keySelector = { it.second }, valueTransform = { it.first })
+        for ((kind, idsNewestFirst) in byKind) {
+            serviceScope.launch {
+                try {
+                    if (!repository.isAllowed(user, app)) return@launch
+                    attachMedia(idsNewestFirst, kind, sbn)
+                } catch (e: Exception) {
+                    Log.w(TAG, "attach burst media failed: $e")
                 }
-            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Links the real WhatsApp file to each message in [idsNewestFirst]. WhatsApp
+     * posts the notification before the download ends, and stickers, GIFs and
+     * voice notes give the watchers no signal (`.nomedia`), so the folders are
+     * polled for [FILE_POLL_ATTEMPTS] rounds. The notification preview (if
+     * any) is shown meanwhile and replaced once the file lands.
+     */
+    private suspend fun attachMedia(
+        idsNewestFirst: List<String>,
+        kind: PlaceholderKind,
+        sbn: StatusBarNotification
+    ) {
+        val since = System.currentTimeMillis() - ArrivingMedia.LOOKUP_WINDOW_MS
+        var waiting = idsNewestFirst
+        for (attempt in 0 until FILE_POLL_ATTEMPTS) {
+            if (attempt > 0) delay(FILE_POLL_INTERVAL_MS)
+            val files = arrivingMedia.storedCopyPaths(
+                applicationContext, kind, waiting.size, since, repository.linkedMediaPaths()
+            )
+            files.forEachIndexed { index, path -> repository.linkFile(waiting[index], path) }
+            waiting = waiting.drop(files.size)
+            if (waiting.isEmpty()) return
+            if (attempt == 0) {
+                waiting.forEach { id ->
+                    arrivingMedia.thumbnailPath(sbn, applicationContext, kind)
+                        ?.let { repository.linkPreview(id, it) }
+                }
             }
         }
     }
