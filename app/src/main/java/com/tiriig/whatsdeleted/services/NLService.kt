@@ -12,6 +12,7 @@ import com.tiriig.whatsdeleted.utility.getRandomNum
 import com.tiriig.whatsdeleted.utility.isDeletionNotice
 import com.tiriig.whatsdeleted.utility.isValidApp
 import com.tiriig.whatsdeleted.utility.isValidTitle
+import com.tiriig.whatsdeleted.utility.placeholderKind
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -35,6 +36,9 @@ class NLService : NotificationListenerService() {
 
     @Inject
     lateinit var tempStore: TempMediaStore
+
+    @Inject
+    lateinit var arrivingMedia: ArrivingMedia
 
     // This scope is tied to the service's lifecycle and uses a background thread.
     // A SupervisorJob ensures that if one child coroutine fails, the others are not cancelled.
@@ -84,11 +88,18 @@ class NLService : NotificationListenerService() {
 
         // Launch a coroutine on our background-threaded scope to do the heavy lifting.
         serviceScope.launch {
-            saveNewMessage(title, text, lines, time, app)
+            saveNewMessage(title, text, lines, time, app, sbn)
         }
     }
 
-    private suspend fun saveNewMessage(title: String, text: String, lines: List<String>, time: Long, app: String) {
+    private suspend fun saveNewMessage(
+        title: String,
+        text: String,
+        lines: List<String>,
+        time: Long,
+        app: String,
+        sbn: StatusBarNotification
+    ) {
         // Sentinela rule: TEXT is saved for everyone except contacts the user
         // ignored (saveMessages = false). The media switch only gates media
         // copies and the "deleted" alert (see flagLastMessageDeleted).
@@ -110,13 +121,16 @@ class NLService : NotificationListenerService() {
             }
 
             if (lines.size > 1) {
-                saveLines(groupName, senderName, lines, time, app, isGroup = true)
+                saveLines(groupName, senderName, lines, time, app, isGroup = true, sbn = sbn)
                 repository.runCleanupIfDue()
                 return
             }
             if (text.isEmpty()) return
 
-            val groupChat = Chat(getRandomNum(), groupName, "$senderName: $text", time, app, isGroup = true)
+            val groupChat = Chat(
+                getRandomNum(), groupName, "$senderName: $text", time, app,
+                isGroup = true, mediaPath = captureFor(groupName, app, text, sbn)
+            )
             repository.saveMessage(groupChat)
         } else {
             if (!repository.shouldSaveMessages(title, app)) return
@@ -127,14 +141,17 @@ class NLService : NotificationListenerService() {
             }
 
             if (lines.size > 1) {
-                saveLines(title, null, lines, time, app, isGroup = false)
+                saveLines(title, null, lines, time, app, isGroup = false, sbn = sbn)
                 repository.runCleanupIfDue()
                 return
             }
             if (text.isEmpty()) return
 
             // Standard direct message
-            val chat = Chat(getRandomNum(), title, text, time, app)
+            val chat = Chat(
+                getRandomNum(), title, text, time, app,
+                mediaPath = captureFor(title, app, text, sbn)
+            )
             repository.saveMessage(chat)
         }
         repository.runCleanupIfDue()
@@ -151,21 +168,51 @@ class NLService : NotificationListenerService() {
         lines: List<String>,
         time: Long,
         app: String,
-        isGroup: Boolean
+        isGroup: Boolean,
+        sbn: StatusBarNotification
     ) {
         if (!repository.shouldSaveMessages(user, app)) return
         val clean = lines.map { it.trim() }
             .filter { it.isNotEmpty() && it.isValidTitle() && !it.isDeletionNotice() }
             .takeLast(10)
         if (clean.isEmpty()) return
-        clean.forEach { line ->
+        // Only the newest line owns this notification's media.
+        val newestIndex = clean.indices.last
+        clean.forEachIndexed { index, line ->
             val body =
                 if (isGroup && senderName != null && !line.startsWith("$senderName:")) {
                     "$senderName: $line"
                 } else {
                     line
                 }
-            repository.saveMessage(Chat(getRandomNum(), user, body, time, app, isGroup = isGroup))
+            val mediaPath = if (index == newestIndex) {
+                captureFor(user, app, line, sbn)
+            } else {
+                null
+            }
+            repository.saveMessage(Chat(getRandomNum(), user, body, time, app, isGroup = isGroup, mediaPath = mediaPath))
+        }
+    }
+
+    /**
+     * Attach viewable content to a media placeholder at arrival time, on the
+     * message itself: fresh MediaStore file first (full-res/playable), then
+     * the notification thumbnail (the only path for stickers/GIFs). Plain
+     * text and opted-out contacts get nothing.
+     */
+    private suspend fun captureFor(
+        user: String,
+        app: String,
+        text: String,
+        sbn: StatusBarNotification
+    ): String? {
+        val kind = placeholderKind(text) ?: return null
+        if (!repository.isAllowed(user, app)) return null
+        return try {
+            arrivingMedia.storedCopyPath(applicationContext, kind)
+                ?: arrivingMedia.thumbnailPath(sbn, applicationContext)
+        } catch (_: Exception) {
+            null
         }
     }
 

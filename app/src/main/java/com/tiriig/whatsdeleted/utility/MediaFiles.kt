@@ -23,6 +23,34 @@ enum class MediaKind(val extensions: Set<String>, val mimeFallback: String) {
     }
 }
 
+/**
+ * What kind of viewable content hides behind a notification placeholder
+ * ("Sent a photo"). Null for plain text and for placeholders with no capture
+ * path (calls, documents, locations). Stickers and GIFs render as images but
+ * only ever come from the notification thumbnail: WhatsApp keeps those files
+ * in private storage, invisible to file and MediaStore watchers.
+ */
+enum class PlaceholderKind { PHOTO, VIDEO, AUDIO, STICKER, GIF }
+
+private val callWords = listOf("call", "chamada", "ligação", "ligacao")
+
+fun placeholderKind(text: String): PlaceholderKind? {
+    val lower = text.trim().trimStart { !it.isLetterOrDigit() }.lowercase()
+    if (callWords.any { it in lower }) return null
+    if ("sticker" in lower || "figurinha" in lower) return PlaceholderKind.STICKER
+    if ("gif" in lower) return PlaceholderKind.GIF
+    if ("voice" in lower || "voz" in lower || "audio" in lower || "áudio" in lower ||
+        "🎤" in lower
+    ) return PlaceholderKind.AUDIO
+    if ("photo" in lower || "foto" in lower || "image" in lower || "imagem" in lower ||
+        "📷" in lower
+    ) return PlaceholderKind.PHOTO
+    if ("video" in lower || "vídeo" in lower || "📹" in lower || "🎥" in lower) {
+        return PlaceholderKind.VIDEO
+    }
+    return null
+}
+
 fun File.mediaMimeType(): String {
     val ext = extension.lowercase()
     return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)

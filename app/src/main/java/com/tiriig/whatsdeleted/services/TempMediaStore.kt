@@ -48,6 +48,35 @@ class TempMediaStore @Inject constructor(
         }
     }
 
+    /** Persist notification preview pixels (photo/video/sticker/GIF thumbnails). */
+    fun stageBitmap(bitmap: android.graphics.Bitmap): File? = synchronized(lock) {
+        try {
+            val dest = File(mediaDir(), "${System.currentTimeMillis()}_notif.jpg")
+            dest.outputStream().use { out ->
+                if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)) {
+                    return null
+                }
+            }
+            dest
+        } catch (e: Exception) {
+            Log.w(TAG, "stageBitmap failed: $e")
+            null
+        }
+    }
+
+    /** Copy an open stream (e.g. a MediaStore row) into the media dir. */
+    fun stageStream(input: java.io.InputStream, ext: String): File? = synchronized(lock) {
+        try {
+            val safeExt = ext.replace(Regex("[^A-Za-z0-9]"), "").take(5).ifEmpty { "bin" }
+            val dest = File(mediaDir(), "${System.currentTimeMillis()}_store.$safeExt")
+            dest.outputStream().use { out -> input.copyTo(out) }
+            dest
+        } catch (e: Exception) {
+            Log.w(TAG, "stageStream failed: $e")
+            null
+        }
+    }
+
     /** Newest copy not linked to any message ([linked]) and staged within [windowMs]. */
     fun claimOwnerless(linked: Set<String>, windowMs: Long = CLAIM_WINDOW_MS): File? =
         synchronized(lock) {
