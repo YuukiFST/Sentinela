@@ -143,7 +143,7 @@ class TempMediaStore @Inject constructor(
 
     /**
      * Delete copies older than [retentionCutoff], then enforce [maxBytes]
-     * oldest-first. Copies in [keep] (media of deleted messages, the whole
+     * oldest-first. Copies in [keep] (media linked to stored messages, the whole
      * point of the app) are never deleted here.
      */
     fun cleanup(retentionCutoff: Long, maxBytes: Long, keep: Set<String>) {

@@ -214,7 +214,10 @@ class ChatRepository @Inject constructor(
                 if (now - CleanupPrefs.lastCleanup(appContext) < CLEANUP_INTERVAL_MS) return@withContext
                 val cutoff = CleanupPrefs.retentionCutoff(appContext, now)
                 database.userDao().deleteOlderThan(cutoff)
-                val keep = database.userDao().getDeletedMediaPaths().toSet()
+                // Every copy still linked to a stored message stays: deletion detection is
+                // best-effort, so keeping only isDeleted media let the size cap erase the
+                // photo of a message the sender deleted without WhatsApp re-notifying.
+                val keep = database.userDao().getAllMediaPaths().toSet()
                 tempStore.cleanup(cutoff, CleanupPrefs.maxMediaBytes(appContext), keep)
                 CleanupPrefs.setLastCleanup(appContext, now)
             } catch (e: Exception) {

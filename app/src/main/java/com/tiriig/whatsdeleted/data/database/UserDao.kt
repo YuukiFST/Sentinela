@@ -60,9 +60,6 @@ interface UserDao {
     @Query("SELECT mediaPath FROM chat WHERE mediaPath IS NOT NULL")
     suspend fun getAllMediaPaths(): List<String>
 
-    @Query("SELECT mediaPath FROM chat WHERE mediaPath IS NOT NULL AND isDeleted = 1")
-    suspend fun getDeletedMediaPaths(): List<String>
-
     @Query("SELECT mediaPath FROM chat WHERE `user` = :user AND app = :app AND mediaPath IS NOT NULL")
     suspend fun getMediaPathsForChat(user: String, app: String): List<String>
 
