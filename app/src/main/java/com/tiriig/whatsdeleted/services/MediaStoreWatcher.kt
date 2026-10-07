@@ -22,10 +22,15 @@ class MediaStoreWatcher(
 ) {
     companion object {
         private const val TAG = "MediaStoreWatcher"
-        private const val DEBOUNCE_MS = 2_000L
+        // Burst-tuned: photos/audios land seconds apart, so a 2s debounce added
+        // up to 4s (debounce + settle) before the first item linked. 600ms still
+        // coalesces a rapid burst into one scan while cutting first-item latency.
+        private const val DEBOUNCE_MS = 600L
 
         // A file still being downloaded keeps getting its mtime bumped.
-        private const val SETTLE_MS = 2_000L
+        // 800ms links photos/audio fast; a large video simply re-schedules
+        // until it settles, staying correct while small files stay quick.
+        private const val SETTLE_MS = 800L
 
         private val COLLECTIONS = listOf(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,

@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,18 +31,33 @@ class TempMediaStore @Inject constructor(
     // Source paths already copied: both watchers report the same file.
     private val seenSources = LinkedHashSet<String>()
 
+    // Burst uniqueness: currentTimeMillis collides within one ms burst.
+    private val nameCounter = AtomicLong(0)
+
     fun mediaDir(): File =
         File(context.getExternalFilesDir(null), DIR_NAME).apply { mkdirs() }
 
-    /** Copy [src] into the media dir; null if it was already copied or the copy failed. */
-    fun stage(src: File): File? = synchronized(lock) {
-        if (!src.isFile) return null
-        if (!seenSources.add(src.absolutePath)) return null
+    /** Reserve [key] once; false when this source was already staged. Lock held briefly. */
+    fun tryReserve(key: String): Boolean = synchronized(lock) {
+        if (!seenSources.add(key)) return false
         if (seenSources.size > MAX_SEEN) seenSources.remove(seenSources.first())
-        try {
+        true
+    }
+
+    private fun uniqueDest(safe: String): File =
+        File(mediaDir(), "${System.currentTimeMillis()}_${System.nanoTime()}_${nameCounter.getAndIncrement()}_$safe")
+
+    /** Copy [src] into the media dir; null if it was already copied or the copy failed. */
+    fun stage(src: File): File? {
+        if (!src.isFile) return null
+        // Dedup reservation under a brief lock; the copy itself runs unlocked so
+        // a burst of photos does not queue behind one large video.
+        if (!tryReserve(src.absolutePath)) return null
+        return try {
             val safe = src.name.replace(Regex("[^A-Za-z0-9._-]"), "_").takeLast(80)
-            val dest = File(mediaDir(), "${System.currentTimeMillis()}_$safe")
+            val dest = uniqueDest(safe)
             src.copyTo(dest, overwrite = false)
+            dest
         } catch (e: Exception) {
             Log.w(TAG, "stage failed for ${src.path}: $e")
             null
@@ -49,9 +65,10 @@ class TempMediaStore @Inject constructor(
     }
 
     /** Persist notification preview pixels (photo/video/sticker/GIF thumbnails). */
-    fun stageBitmap(bitmap: android.graphics.Bitmap): File? = synchronized(lock) {
-        try {
-            val dest = File(mediaDir(), "${System.currentTimeMillis()}_notif.jpg")
+    fun stageBitmap(bitmap: android.graphics.Bitmap): File? {
+        // Unique dest per call, no shared state: runs unlocked for burst throughput.
+        return try {
+            val dest = uniqueDest("notif.jpg")
             dest.outputStream().use { out ->
                 if (!bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)) {
                     return null
@@ -65,11 +82,14 @@ class TempMediaStore @Inject constructor(
     }
 
     /** Copy an open stream (e.g. a MediaStore row) into the media dir. */
-    fun stageStream(input: java.io.InputStream, ext: String): File? = synchronized(lock) {
-        try {
+    fun stageStream(input: java.io.InputStream, ext: String, sourceKey: String? = null): File? {
+        // Shared dedup with [stage] when the MediaStore row maps to a known path,
+        // so the notification path and the watchers do not copy the same file twice.
+        if (sourceKey != null && !tryReserve(sourceKey)) return null
+        return try {
             val safeExt = ext.replace(Regex("[^A-Za-z0-9]"), "").take(5).ifEmpty { "bin" }
-            val dest = File(mediaDir(), "${System.currentTimeMillis()}_store.$safeExt")
-            dest.outputStream().use { out -> input.copyTo(out) }
+            val dest = uniqueDest("store.$safeExt")
+            dest.outputStream().use { out -> input.copyTo(out, bufferSize = 256 * 1024) }
             dest
         } catch (e: Exception) {
             Log.w(TAG, "stageStream failed: $e")

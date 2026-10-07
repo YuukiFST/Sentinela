@@ -42,14 +42,23 @@ class ArrivingMedia @Inject constructor(
     }
 
     /** Fresh WhatsApp file from MediaStore. Null without permission or file. */
-    fun storedCopyPath(context: Context, kind: PlaceholderKind): String? {
-        if (kind == PlaceholderKind.STICKER || kind == PlaceholderKind.GIF) return null
-        if (!context.hasMediaPermissionFor(kind)) return null
+    fun storedCopyPath(context: Context, kind: PlaceholderKind): String? =
+        storedCopyPaths(context, kind, max = 1).firstOrNull()
+
+    /**
+     * Newest [max] WhatsApp files of [kind] staged in one MediaStore scan.
+     * One query per notification (not one per message line) keeps a burst of
+     * photos/videos/audios fast; direct file copy first, stream fallback next.
+     */
+    fun storedCopyPaths(context: Context, kind: PlaceholderKind, max: Int): List<String> {
+        if (kind == PlaceholderKind.STICKER || kind == PlaceholderKind.GIF) return emptyList()
+        if (!context.hasMediaPermissionFor(kind)) return emptyList()
+        if (max <= 0) return emptyList()
         val collection = when (kind) {
             PlaceholderKind.PHOTO -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
             PlaceholderKind.VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
             PlaceholderKind.AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-            else -> return null
+            else -> return emptyList()
         }
         return try {
             val sinceSec = (System.currentTimeMillis() - LOOKUP_WINDOW_MS) / 1000
@@ -68,10 +77,22 @@ class ArrivingMedia @Inject constructor(
                 val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
                 val dataCol = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
                 val nameCol = cursor.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
-                while (cursor.moveToNext()) {
+                val out = ArrayList<String>(max)
+                while (cursor.moveToNext() && out.size < max) {
                     val path = if (dataCol >= 0) cursor.getString(dataCol) else null
                     val file = path?.let { java.io.File(it) }
                     if (file == null || !MediaObserver.isMediaFile(file)) continue
+                    // Fast path: direct file copy avoids a ContentResolver round-trip
+                    // when the file is already readable; TempMediaStore dedups it.
+                    val direct = try {
+                        tempStore.stage(file)?.absolutePath
+                    } catch (_: Exception) {
+                        null
+                    }
+                    if (direct != null) {
+                        out.add(direct)
+                        continue
+                    }
                     val itemUri = android.content.ContentUris.withAppendedId(
                         collection,
                         cursor.getLong(idCol)
@@ -81,17 +102,17 @@ class ArrivingMedia @Inject constructor(
                         .orEmpty()
                     val staged = try {
                         context.contentResolver.openInputStream(itemUri)
-                            ?.use { input -> tempStore.stageStream(input, ext) }
+                            ?.use { input -> tempStore.stageStream(input, ext, sourceKey = path) }
                     } catch (_: Exception) {
                         null
                     }
-                    if (staged != null) return staged.absolutePath
+                    if (staged != null) out.add(staged.absolutePath)
                 }
-                null
-            }
+                out
+            } ?: emptyList()
         } catch (e: Exception) {
             Log.w(TAG, "MediaStore lookup failed: $e")
-            null
+            emptyList()
         }
     }
 

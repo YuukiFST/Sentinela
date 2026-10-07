@@ -8,6 +8,7 @@ import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.data.repository.ChatRepository
 import com.tiriig.whatsdeleted.utility.Notifications
+import com.tiriig.whatsdeleted.utility.PlaceholderKind
 import com.tiriig.whatsdeleted.utility.getRandomNum
 import com.tiriig.whatsdeleted.utility.isDeletionNotice
 import com.tiriig.whatsdeleted.utility.isValidApp
@@ -127,11 +128,15 @@ class NLService : NotificationListenerService() {
             }
             if (text.isEmpty()) return
 
+            // Save text immediately so a burst appears instantly; media attaches
+            // async via setMediaPath without blocking this save or the next one.
+            val groupId = getRandomNum()
             val groupChat = Chat(
-                getRandomNum(), groupName, "$senderName: $text", time, app,
-                isGroup = true, mediaPath = captureFor(groupName, app, text, sbn)
+                groupId, groupName, "$senderName: $text", time, app,
+                isGroup = true, mediaPath = null
             )
             repository.saveMessage(groupChat)
+            placeholderKind(text)?.let { attachMediaAsync(groupId, groupName, app, it, sbn) }
         } else {
             if (!repository.shouldSaveMessages(title, app)) return
 
@@ -147,12 +152,14 @@ class NLService : NotificationListenerService() {
             }
             if (text.isEmpty()) return
 
-            // Standard direct message
+            // Standard direct message: same non-blocking media attach.
+            val id = getRandomNum()
             val chat = Chat(
-                getRandomNum(), title, text, time, app,
-                mediaPath = captureFor(title, app, text, sbn)
+                id, title, text, time, app,
+                mediaPath = null
             )
             repository.saveMessage(chat)
+            placeholderKind(text)?.let { attachMediaAsync(id, title, app, it, sbn) }
         }
         repository.runCleanupIfDue()
     }
@@ -176,43 +183,76 @@ class NLService : NotificationListenerService() {
             .filter { it.isNotEmpty() && it.isValidTitle() && !it.isDeletionNotice() }
             .takeLast(10)
         if (clean.isEmpty()) return
-        // Only the newest line owns this notification's media.
-        val newestIndex = clean.indices.last
-        clean.forEachIndexed { index, line ->
+        // Save every line's text first (burst-visible instantly), then attach
+        // media newest-first in one batch per kind: previously only the newest
+        // line got media, so all but one photo in a burst lost their copy.
+        val pending = ArrayList<Pair<String, PlaceholderKind>>(clean.size)
+        clean.forEach { line ->
             val body =
                 if (isGroup && senderName != null && !line.startsWith("$senderName:")) {
                     "$senderName: $line"
                 } else {
                     line
                 }
-            val mediaPath = if (index == newestIndex) {
-                captureFor(user, app, line, sbn)
-            } else {
-                null
+            val id = getRandomNum()
+            repository.saveMessage(Chat(id, user, body, time, app, isGroup = isGroup, mediaPath = null))
+            placeholderKind(line)?.let { pending.add(id to it) }
+        }
+        if (pending.isNotEmpty()) attachBurstMediaAsync(pending, user, app, sbn)
+    }
+
+    /**
+     * Async media attach for one message: fresh MediaStore file first
+     * (full-res/playable), then the notification thumbnail (only path for
+     * stickers/GIFs). Plain text and opted-out contacts get nothing.
+     */
+    private fun attachMediaAsync(
+        id: String,
+        user: String,
+        app: String,
+        kind: PlaceholderKind,
+        sbn: StatusBarNotification
+    ) {
+        serviceScope.launch {
+            try {
+                if (!repository.isAllowed(user, app)) return@launch
+                val path = arrivingMedia.storedCopyPath(applicationContext, kind)
+                    ?: arrivingMedia.thumbnailPath(sbn, applicationContext)
+                    ?: return@launch
+                repository.setMediaPath(id, path)
+            } catch (_: Exception) {
             }
-            repository.saveMessage(Chat(getRandomNum(), user, body, time, app, isGroup = isGroup, mediaPath = mediaPath))
         }
     }
 
     /**
-     * Attach viewable content to a media placeholder at arrival time, on the
-     * message itself: fresh MediaStore file first (full-res/playable), then
-     * the notification thumbnail (the only path for stickers/GIFs). Plain
-     * text and opted-out contacts get nothing.
+     * Async batch attach for a digest burst: one MediaStore scan per kind,
+     * newest message takes the newest file. Newest-first also protects the new
+     * line from digest overlap: re-posted old lines are dedup-skipped on insert,
+     * so their setMediaPath hits zero rows while the new line keeps its file.
      */
-    private suspend fun captureFor(
+    private fun attachBurstMediaAsync(
+        pendingOldestFirst: List<Pair<String, PlaceholderKind>>,
         user: String,
         app: String,
-        text: String,
         sbn: StatusBarNotification
-    ): String? {
-        val kind = placeholderKind(text) ?: return null
-        if (!repository.isAllowed(user, app)) return null
-        return try {
-            arrivingMedia.storedCopyPath(applicationContext, kind)
-                ?: arrivingMedia.thumbnailPath(sbn, applicationContext)
-        } catch (_: Exception) {
-            null
+    ) {
+        serviceScope.launch {
+            try {
+                if (!repository.isAllowed(user, app)) return@launch
+                val byKind = pendingOldestFirst.asReversed()
+                    .groupBy(keySelector = { it.second }, valueTransform = { it.first })
+                for ((kind, idsNewestFirst) in byKind) {
+                    val paths = arrivingMedia.storedCopyPaths(applicationContext, kind, idsNewestFirst.size)
+                    idsNewestFirst.forEachIndexed { index, id ->
+                        val path = paths.getOrNull(index)
+                            ?: arrivingMedia.thumbnailPath(sbn, applicationContext)
+                            ?: return@forEachIndexed
+                        repository.setMediaPath(id, path)
+                    }
+                }
+            } catch (_: Exception) {
+            }
         }
     }
 

@@ -10,6 +10,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import java.io.File
 import javax.inject.Inject
@@ -23,6 +24,7 @@ import javax.inject.Inject
  * Started piggyback on [NLService] and [MainActivity]; START_STICKY.
  */
 @AndroidEntryPoint
+@OptIn(ExperimentalCoroutinesApi::class)
 class MediaObserverService : Service() {
 
     companion object {
@@ -37,6 +39,10 @@ class MediaObserverService : Service() {
     lateinit var tempStore: TempMediaStore
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // Burst bound: watchers fire once per file, and each job copies. Unbounded
+    // launches let 10 rapid photos each open DB + copy at once; 3 workers keep
+    // latency flat without starving the notification path sharing Dispatchers.IO.
+    private val copyDispatcher = Dispatchers.IO.limitedParallelism(3)
     private var observer: MediaObserver? = null
     private var storeWatcher: MediaStoreWatcher? = null
 
@@ -59,7 +65,7 @@ class MediaObserverService : Service() {
     }
 
     private fun onMediaFile(file: File) {
-        serviceScope.launch {
+        serviceScope.launch(copyDispatcher) {
             try {
                 val since = System.currentTimeMillis() - ATTRIBUTION_WINDOW_MS
                 val recent = repository.mostRecentSince(since)
