@@ -4,6 +4,7 @@ import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.data.repository.ChatRepository
@@ -13,6 +14,8 @@ import com.tiriig.whatsdeleted.utility.getRandomNum
 import com.tiriig.whatsdeleted.utility.isDeletionNotice
 import com.tiriig.whatsdeleted.utility.isValidApp
 import com.tiriig.whatsdeleted.utility.isValidTitle
+import com.tiriig.whatsdeleted.utility.mediaKind
+import com.tiriig.whatsdeleted.utility.newDigestLines
 import com.tiriig.whatsdeleted.utility.placeholderKind
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +36,9 @@ class NLService : NotificationListenerService() {
         // a slow connection; larger videos are still caught by MediaStoreWatcher.
         private const val FILE_POLL_ATTEMPTS = 15
         private const val FILE_POLL_INTERVAL_MS = 2_000L
+
+        // Newest messages read from one notification; older ones were saved by earlier posts.
+        private const val MAX_DIGEST_MESSAGES = 10
     }
 
     @Inject
@@ -88,14 +94,40 @@ class NLService : NotificationListenerService() {
         val lines = extras.getCharSequenceArray("android.textLines")
             ?.mapNotNull { it?.toString()?.takeIf { s -> s.isNotEmpty() } }
             ?: emptyList()
+        val styleMessages = styleMessages(sbn, time)
 
         // Ignore notifications with invalid titles (e.g., "Checking for new messages").
         if (!title.isValidTitle()) return
-        if (text.isEmpty() && lines.isEmpty()) return
+        if (text.isEmpty() && lines.isEmpty() && styleMessages.isEmpty()) return
 
         // Launch a coroutine on our background-threaded scope to do the heavy lifting.
         serviceScope.launch {
-            saveNewMessage(title, text, lines, time, app, sbn)
+            saveNewMessage(title, text, lines, styleMessages, time, app, sbn)
+        }
+    }
+
+    /** One message of a MessagingStyle notification; [sentAt] stays the same on every re-post. */
+    private class StyleMessage(val sender: String, val text: String, val sentAt: Long, val inGroup: Boolean)
+
+    /**
+     * Messages the notification lists with their own send time, oldest first.
+     * Messages without a sender are the user's own replies and are skipped.
+     */
+    private fun styleMessages(sbn: StatusBarNotification, fallbackTime: Long): List<StyleMessage> {
+        val style = try {
+            NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(sbn.notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "MessagingStyle read failed: $e")
+            null
+        } ?: return emptyList()
+        // A group title may lack the "Group: Sender" colon; the style still knows.
+        val inGroup = style.isGroupConversation
+        return style.messages.mapNotNull { message ->
+            val sender = message.person?.name?.toString()?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val body = message.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            StyleMessage(sender, body, message.timestamp.takeIf { it > 0 } ?: fallbackTime, inGroup)
         }
     }
 
@@ -103,77 +135,79 @@ class NLService : NotificationListenerService() {
         title: String,
         text: String,
         lines: List<String>,
+        styleMessages: List<StyleMessage>,
         time: Long,
         app: String,
         sbn: StatusBarNotification
     ) {
         // Sentinela rule: TEXT is saved for everyone except contacts the user
         // ignored (saveMessages = false). The media switch only gates media
-        // copies and the "deleted" alert (see flagLastMessageDeleted).
-        if (title.contains(":")) {
-            // Assumes "GroupName: SenderName" format
-            var groupName = title.substringBefore(":")
-            val senderName = title.substringAfter(": ").trim()
+        // copies and the "deleted" alert (see flagDeleted).
+        val isGroup = title.contains(":")
+        // Assumes "GroupName: SenderName" format; message counts are stripped
+        // from the group name (e.g., "My Group (2 messages)").
+        val user = if (isGroup) title.substringBefore(":").substringBefore("(").trim() else title
+        val senderName = if (isGroup) title.substringAfter(": ").trim() else null
 
-            // Clean up group name if it contains message counts (e.g., "My Group (2 messages)")
-            if (groupName.contains("(")) {
-                groupName = groupName.substringBefore("(").trim()
-            }
+        if (!repository.shouldSaveMessages(user, app)) return
 
-            if (!repository.shouldSaveMessages(groupName, app)) return
-
-            if (text.isDeletionNotice()) {
-                flagLastMessageDeleted(groupName, app)
+        when {
+            styleMessages.isNotEmpty() -> saveStyleMessages(user, styleMessages, app, isGroup, sbn)
+            text.isDeletionNotice() -> {
+                flagDeleted(user, app)
                 return
             }
-
-            if (lines.size > 1) {
-                saveLines(groupName, senderName, lines, time, app, isGroup = true, sbn = sbn)
-                repository.runCleanupIfDue()
-                return
+            lines.size > 1 -> saveLines(user, senderName, lines, time, app, isGroup, sbn)
+            text.isEmpty() -> return
+            else -> {
+                // Save text immediately so a burst appears instantly; media attaches
+                // async via setMediaPath without blocking this save or the next one.
+                val id = getRandomNum()
+                val body = if (isGroup) "$senderName: $text" else text
+                val saved = repository.saveMessage(Chat(id, user, body, time, app, isGroup = isGroup))
+                if (saved) placeholderKind(text)?.let { attachMediaAsync(id, user, app, it, sbn) }
             }
-            if (text.isEmpty()) return
-
-            // Save text immediately so a burst appears instantly; media attaches
-            // async via setMediaPath without blocking this save or the next one.
-            val groupId = getRandomNum()
-            val groupChat = Chat(
-                groupId, groupName, "$senderName: $text", time, app,
-                isGroup = true, mediaPath = null
-            )
-            repository.saveMessage(groupChat)
-            placeholderKind(text)?.let { attachMediaAsync(groupId, groupName, app, it, sbn) }
-        } else {
-            if (!repository.shouldSaveMessages(title, app)) return
-
-            if (text.isDeletionNotice()) {
-                flagLastMessageDeleted(title, app)
-                return
-            }
-
-            if (lines.size > 1) {
-                saveLines(title, null, lines, time, app, isGroup = false, sbn = sbn)
-                repository.runCleanupIfDue()
-                return
-            }
-            if (text.isEmpty()) return
-
-            // Standard direct message: same non-blocking media attach.
-            val id = getRandomNum()
-            val chat = Chat(
-                id, title, text, time, app,
-                mediaPath = null
-            )
-            repository.saveMessage(chat)
-            placeholderKind(text)?.let { attachMediaAsync(id, title, app, it, sbn) }
         }
         repository.runCleanupIfDue()
     }
 
     /**
-     * Saving the whole digest on every update is what rendered one message
-     * several times. Save line-by-line (oldest first) and let the repository's
-     * 10s dedup window drop the overlap, keeping only the genuinely new suffix.
+     * Saving the notification's latest text under the notification time
+     * repeated a message whenever WhatsApp re-posted it later. Each listed
+     * message is saved with its own send time instead, so a re-post matches
+     * the stored row exactly and is skipped. A message replaced by the
+     * deletion notice flags the stored row with that send time.
+     */
+    private suspend fun saveStyleMessages(
+        user: String,
+        messages: List<StyleMessage>,
+        app: String,
+        isGroup: Boolean,
+        sbn: StatusBarNotification
+    ) {
+        val recent = messages.takeLast(MAX_DIGEST_MESSAGES)
+        val pending = ArrayList<Pair<String, PlaceholderKind>>()
+        recent.forEachIndexed { index, message ->
+            if (message.text.isDeletionNotice()) {
+                // Send time not stored: only the newest notice may fall back to
+                // the last stored message, as the plain-text path does.
+                flagDeleted(user, app, message.sentAt, orLast = index == recent.lastIndex)
+                return@forEachIndexed
+            }
+            val group = isGroup || message.inGroup
+            val body = if (group) "${message.sender}: ${message.text}" else message.text
+            val id = getRandomNum()
+            if (repository.saveMessage(Chat(id, user, body, message.sentAt, app, isGroup = group))) {
+                placeholderKind(message.text)?.let { pending.add(id to it) }
+            }
+        }
+        if (pending.isNotEmpty()) attachBurstMediaAsync(pending, user, app, sbn)
+    }
+
+    /**
+     * Fallback for digests without MessagingStyle: every line shares one
+     * timestamp, so the overlap with what is stored is found by text order
+     * ([newDigestLines]) and only the new suffix is saved.
      */
     private suspend fun saveLines(
         user: String,
@@ -184,25 +218,23 @@ class NLService : NotificationListenerService() {
         isGroup: Boolean,
         sbn: StatusBarNotification
     ) {
-        if (!repository.shouldSaveMessages(user, app)) return
-        val clean = lines.map { it.trim() }
+        val bodies = lines.map { it.trim() }
             .filter { it.isNotEmpty() && it.isValidTitle() && !it.isDeletionNotice() }
-            .takeLast(10)
-        if (clean.isEmpty()) return
+            .takeLast(MAX_DIGEST_MESSAGES)
+            .map { line ->
+                if (isGroup && senderName != null && !line.startsWith("$senderName:")) "$senderName: $line" else line
+            }
+        if (bodies.isEmpty()) return
+        val fresh = newDigestLines(repository.recentTexts(user, app, bodies.size), bodies)
         // Save every line's text first (burst-visible instantly), then attach
         // media newest-first in one batch per kind: previously only the newest
         // line got media, so all but one photo in a burst lost their copy.
-        val pending = ArrayList<Pair<String, PlaceholderKind>>(clean.size)
-        clean.forEach { line ->
-            val body =
-                if (isGroup && senderName != null && !line.startsWith("$senderName:")) {
-                    "$senderName: $line"
-                } else {
-                    line
-                }
+        val pending = ArrayList<Pair<String, PlaceholderKind>>(fresh.size)
+        fresh.forEach { body ->
             val id = getRandomNum()
-            repository.saveMessage(Chat(id, user, body, time, app, isGroup = isGroup, mediaPath = null))
-            placeholderKind(line)?.let { pending.add(id to it) }
+            if (repository.saveMessage(Chat(id, user, body, time, app, isGroup = isGroup))) {
+                placeholderKind(body)?.let { pending.add(id to it) }
+            }
         }
         if (pending.isNotEmpty()) attachBurstMediaAsync(pending, user, app, sbn)
     }
@@ -228,8 +260,6 @@ class NLService : NotificationListenerService() {
     /**
      * Async batch attach for a digest burst, one job per kind so a slow video
      * does not hold back the stickers. Newest message takes the newest file.
-     * Newest-first also protects the new line from digest overlap: re-posted
-     * old lines are dedup-skipped on insert, so their link hits zero rows.
      */
     private fun attachBurstMediaAsync(
         pendingOldestFirst: List<Pair<String, PlaceholderKind>>,
@@ -282,13 +312,18 @@ class NLService : NotificationListenerService() {
         }
     }
 
-    // The notification content is replaced rather than removed when a message is
-    // deleted, so we just flag the chat's most recent message and let the user know.
-    private suspend fun flagLastMessageDeleted(user: String, app: String) {
-        val lastMessage = repository.lastMessageForChat(user, app) ?: return
-        if (lastMessage.isDeleted) return
+    /**
+     * The notification content is replaced rather than removed when a message
+     * is deleted. Flags the stored message sent at [sentAt] when known, else
+     * (if [orLast]) the chat's most recent one, and lets the user know.
+     */
+    private suspend fun flagDeleted(user: String, app: String, sentAt: Long? = null, orLast: Boolean = true) {
+        val target = sentAt?.let { repository.messageAt(user, app, it) }
+            ?: (if (orLast) repository.lastMessageForChat(user, app) else null)
+            ?: return
+        if (target.isDeleted) return
 
-        repository.messageIsDeleted(lastMessage.id)
+        repository.messageIsDeleted(target.id)
 
         if (!repository.isAllowed(user, app)) {
             // Opted out: no media was copied for this chat; stay silent
@@ -298,10 +333,13 @@ class NLService : NotificationListenerService() {
         }
 
         // Media is normally linked when the file shows up (MediaObserverService);
-        // a file with no message in the 5 min before it stays ownerless, so claim a recent one.
-        if (lastMessage.mediaPath == null) {
-            val ownerless = tempStore.claimOwnerless(repository.linkedMediaPaths())
-            if (ownerless != null) repository.setMediaPath(lastMessage.id, ownerless.absolutePath)
+        // a file with no message in the 5 min before it stays ownerless, so claim
+        // a recent one, but only for a media message and only of its type: a
+        // deleted text or view-once message used to take an unrelated photo.
+        val kind = placeholderKind(target.message)
+        if (target.mediaPath == null && kind != null) {
+            val ownerless = tempStore.claimOwnerless(repository.linkedMediaPaths(), kind.mediaKind())
+            if (ownerless != null) repository.setMediaPath(target.id, ownerless.absolutePath)
         }
 
         notifications.notify(

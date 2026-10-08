@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.databinding.FragmentAllowedContactsBinding
 import com.tiriig.whatsdeleted.ui.chat.ChatViewModel
 import com.tiriig.whatsdeleted.utility.hide
@@ -15,7 +16,9 @@ import dagger.hilt.android.AndroidEntryPoint
 /**
  * Allowlist (opt-out): every known conversation listed with two switches
  * (default ON). Messages OFF = contact ignored, nothing saved. Media OFF =
- * no media copies + no "deleted" alert, text still saved.
+ * no media copies + no "deleted" alert, text still saved. With the
+ * `ignoredOnly` argument (ignoredContactsFragment) only ignored contacts are
+ * listed, so one can be switched back on without searching the whole list.
  */
 @AndroidEntryPoint
 class AllowedContactsFragment : Fragment() {
@@ -41,13 +44,19 @@ class AllowedContactsFragment : Fragment() {
             onToggleMessages = { item, checked -> viewModel.setSaveMessages(item.user, item.app, checked) }
         )
         binding.recyclerView.adapter = adapter
-        viewModel.allowedUi.observe(viewLifecycleOwner) {
-            if (it.isNullOrEmpty()) {
+        val ignoredOnly = arguments?.getBoolean("ignoredOnly") == true
+        if (ignoredOnly) {
+            binding.headerTv.setText(R.string.ignored_sub)
+            binding.emptyTv.setText(R.string.ignored_empty)
+        }
+        viewModel.allowedUi.observe(viewLifecycleOwner) { all ->
+            val rows = if (ignoredOnly) all.filter { !it.saveMessages } else all
+            if (rows.isEmpty()) {
                 binding.emptyTv.show()
             } else {
                 binding.emptyTv.hide()
             }
-            adapter.submitList(it)
+            adapter.submitList(rows)
             binding.loading.hide()
         }
     }

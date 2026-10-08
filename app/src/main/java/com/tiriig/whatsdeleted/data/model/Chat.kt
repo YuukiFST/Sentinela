@@ -19,4 +19,7 @@ data class Chat(
     val isGroup: Boolean = false,
     /** Local staged copy of media attached on deletion (nullable, added in v5). */
     val mediaPath: String? = null,
+    /** Starred by the user: kept by "Excluir" and by the automatic cleanup (added in v7). */
+    @ColumnInfo(defaultValue = "0")
+    val isFavorite: Boolean = false,
 )

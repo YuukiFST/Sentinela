@@ -21,7 +21,7 @@ import java.util.Locale
 @AndroidEntryPoint
 class ChatDetailFragment : Fragment() {
 
-    private val adapter = ChatDetailAdapter()
+    private val adapter = ChatDetailAdapter { viewModel.setFavorite(it.id, !it.isFavorite) }
     private val viewModel: ChatViewModel by viewModels()
 
     private var _binding: FragmentChatDetailBinding? = null

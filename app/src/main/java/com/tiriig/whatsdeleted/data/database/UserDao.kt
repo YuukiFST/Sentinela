@@ -27,6 +27,17 @@ interface UserDao {
     @Query("SELECT id,message,isDeleted,dateTime,mediaPath from chat where user =:user and app = :app order by dateTime DESC LIMIT 1")
     fun getLastMessageForChat(user: String, app: String): DeletedMessage?
 
+    /** Same message already stored: a re-posted notification carries the same text and send time. */
+    @Query("SELECT EXISTS(SELECT 1 FROM chat WHERE `user` = :user AND app = :app AND message = :message AND dateTime = :dateTime)")
+    fun hasMessage(user: String, app: String, message: String, dateTime: Long): Boolean
+
+    /** Newest [limit] texts of the chat, newest first; rowid orders digest lines saved with one timestamp. */
+    @Query("SELECT message FROM chat WHERE `user` = :user AND app = :app ORDER BY dateTime DESC, rowid DESC LIMIT :limit")
+    suspend fun getRecentTexts(user: String, app: String, limit: Int): List<String>
+
+    @Query("SELECT id,message,isDeleted,dateTime,mediaPath from chat where `user` = :user and app = :app and dateTime = :dateTime LIMIT 1")
+    suspend fun getMessageAt(user: String, app: String, dateTime: Long): DeletedMessage?
+
     @Query("SELECT * from chat where dateTime >= :since order by dateTime DESC LIMIT 1")
     fun getMostRecentSince(since: Long): Chat?
 
@@ -60,13 +71,17 @@ interface UserDao {
     @Query("SELECT mediaPath FROM chat WHERE mediaPath IS NOT NULL")
     suspend fun getAllMediaPaths(): List<String>
 
-    @Query("SELECT mediaPath FROM chat WHERE `user` = :user AND app = :app AND mediaPath IS NOT NULL")
+    @Query("UPDATE chat set isFavorite = :favorite where id = :id")
+    suspend fun setFavorite(id: String, favorite: Boolean)
+
+    // Favorites are kept by both deletions below, and so is their media.
+    @Query("SELECT mediaPath FROM chat WHERE `user` = :user AND app = :app AND mediaPath IS NOT NULL AND isFavorite = 0")
     suspend fun getMediaPathsForChat(user: String, app: String): List<String>
 
-    @Query("DELETE FROM chat WHERE `user` = :user AND app = :app")
+    @Query("DELETE FROM chat WHERE `user` = :user AND app = :app AND isFavorite = 0")
     suspend fun deleteChat(user: String, app: String)
 
-    @Query("DELETE FROM chat WHERE dateTime < :cutoff")
+    @Query("DELETE FROM chat WHERE dateTime < :cutoff AND isFavorite = 0")
     suspend fun deleteOlderThan(cutoff: Long): Int
 
     @Query("DELETE FROM Chat")

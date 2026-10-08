@@ -3,6 +3,7 @@ package com.tiriig.whatsdeleted
 import com.tiriig.whatsdeleted.utility.isDeletionNotice
 import com.tiriig.whatsdeleted.utility.arrivingKind
 import com.tiriig.whatsdeleted.utility.isValidTitle
+import com.tiriig.whatsdeleted.utility.newDigestLines
 import com.tiriig.whatsdeleted.utility.PlaceholderKind
 import com.tiriig.whatsdeleted.utility.placeholderKind
 import org.junit.Assert.assertEquals
@@ -71,6 +72,11 @@ class NotificationTextTest {
             "Voice call",
             "This message was deleted",
             "Location",
+            // View-once media never lands in the WhatsApp folders: any file
+            // taken for it was an unrelated photo.
+            "📷 Foto de visualização única",
+            "🎥 Vídeo de visualização única",
+            "View once photo",
         ).forEach { text ->
             assertNull(text, placeholderKind(text))
         }
@@ -96,5 +102,20 @@ class NotificationTextTest {
         }
         assertNull(placeholderKind("ok"))
         assertNull(File("$media/WhatsApp Documents/report.pdf").arrivingKind())
+        // Not chat media: a profile photo once landed on a view-once message.
+        assertNull(File("$media/WhatsApp Profile Photos/Maria.jpg").arrivingKind())
+        assertNull(File("$media/WhatsApp Documents/scan.jpg").arrivingKind())
+    }
+
+    // A digest re-lists recent history on every update; deduping only against
+    // the last stored text saved the older lines again.
+    @Test
+    fun digestKeepsOnlyNewLines() {
+        assertEquals(listOf("c"), newDigestLines(listOf("x", "a", "b"), listOf("a", "b", "c")))
+        assertEquals(listOf("d"), newDigestLines(listOf("a", "b", "c"), listOf("b", "c", "d")))
+        assertEquals(emptyList<String>(), newDigestLines(listOf("a", "b", "c"), listOf("a", "b", "c")))
+        assertEquals(listOf("a", "b"), newDigestLines(emptyList(), listOf("a", "b")))
+        // The same text in a row is several messages once past the stored one.
+        assertEquals(listOf("ok", "ok"), newDigestLines(listOf("oi", "ok"), listOf("oi", "ok", "ok", "ok")))
     }
 }

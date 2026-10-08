@@ -5,6 +5,7 @@ import android.text.method.LinkMovementMethod
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.PopupMenu
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -21,8 +22,9 @@ import com.tiriig.whatsdeleted.utility.formatTime
 import com.tiriig.whatsdeleted.utility.openMediaFile
 import java.io.File
 
-class ChatDetailAdapter :
-    ListAdapter<ChatItem, RecyclerView.ViewHolder>(ChatDetailDiffCallback()) {
+class ChatDetailAdapter(
+    private val onToggleFavorite: (Chat) -> Unit
+) : ListAdapter<ChatItem, RecyclerView.ViewHolder>(ChatDetailDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         return when (viewType) {
@@ -65,25 +67,42 @@ class ChatDetailAdapter :
     inner class MessageViewHolder(private val binding: ItemMessageBinding) :
         RecyclerView.ViewHolder(binding.root) {
 
+        private var currentChat: Chat? = null
+
         init {
             // Links (autoLink="web" in XML) need a movement method to be tappable.
             binding.message.movementMethod = LinkMovementMethod.getInstance()
-            // Long-press anywhere on the bubble copies the text.
-            val copyListener = View.OnLongClickListener {
-                val text = binding.message.text?.toString().orEmpty()
-                if (text.isNotEmpty()) {
-                    binding.root.context.copyText(text)
-                    true
-                } else {
-                    false
-                }
+            // Long-press anywhere on the bubble: copy the text or (un)favorite it.
+            val actionsListener = View.OnLongClickListener { anchor ->
+                val chat = currentChat ?: return@OnLongClickListener false
+                showActions(anchor, chat)
+                true
             }
-            binding.root.setOnLongClickListener(copyListener)
-            binding.message.setOnLongClickListener(copyListener)
+            binding.root.setOnLongClickListener(actionsListener)
+            binding.message.setOnLongClickListener(actionsListener)
+        }
+
+        private fun showActions(anchor: View, chat: Chat) {
+            val popup = PopupMenu(anchor.context, anchor)
+            popup.menu.add(0, ACTION_COPY, 0, R.string.copy_message)
+            popup.menu.add(
+                0, ACTION_FAVORITE, 1,
+                if (chat.isFavorite) R.string.favorite_remove else R.string.favorite_add
+            )
+            popup.setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    ACTION_COPY -> anchor.context.copyText(chat.message)
+                    ACTION_FAVORITE -> onToggleFavorite(chat)
+                }
+                true
+            }
+            popup.show()
         }
 
         @SuppressLint("SetTextI18n")
         fun bind(chat: Chat) {
+            currentChat = chat
+            binding.favoriteTag.isVisible = chat.isFavorite
             binding.deletedTag.isVisible = chat.isDeleted
             binding.root.setBackgroundResource(
                 if (chat.isDeleted) R.drawable.deleted_message_background
@@ -132,5 +151,7 @@ class ChatDetailAdapter :
     companion object {
         private const val VIEW_TYPE_DATE = 0
         private const val VIEW_TYPE_MESSAGE = 1
+        private const val ACTION_COPY = 1
+        private const val ACTION_FAVORITE = 2
     }
 }

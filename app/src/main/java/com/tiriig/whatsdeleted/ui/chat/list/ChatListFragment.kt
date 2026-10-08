@@ -19,6 +19,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.fragment.findNavController
+import com.google.android.material.snackbar.Snackbar
 import com.tiriig.whatsdeleted.R
 import com.tiriig.whatsdeleted.data.model.Chat
 import com.tiriig.whatsdeleted.databinding.FragmentChatListBinding
@@ -126,10 +127,17 @@ class ChatListFragment : Fragment() {
                 }
 
                 override fun onMenuItemSelected(menuItem: MenuItem): Boolean {
-                    return if (menuItem.itemId == R.id.action_allowlist) {
-                        findNavController().navigate(R.id.allowedContactsFragment)
-                        true
-                    } else false
+                    return when (menuItem.itemId) {
+                        R.id.action_allowlist -> {
+                            findNavController().navigate(R.id.allowedContactsFragment)
+                            true
+                        }
+                        R.id.action_ignored -> {
+                            findNavController().navigate(R.id.ignoredContactsFragment)
+                            true
+                        }
+                        else -> false
+                    }
                 }
             },
             viewLifecycleOwner,
@@ -146,8 +154,18 @@ class ChatListFragment : Fragment() {
             }
             .setNeutralButton(R.string.delete_chat_and_ignore) { _, _ ->
                 viewModel.deleteConversation(chat.user, chat.app, ignore = true)
+                showIgnoredUndo(chat)
             }
             .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    // Ignoring used to be a dead end: say where it is undone, and offer it now.
+    private fun showIgnoredUndo(chat: Chat) {
+        Snackbar.make(binding.root, getString(R.string.contact_ignored, chat.user), Snackbar.LENGTH_LONG)
+            .setAction(R.string.stop_ignoring) {
+                viewModel.setSaveMessages(chat.user, chat.app, true)
+            }
             .show()
     }
 

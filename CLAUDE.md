@@ -27,21 +27,27 @@ This is the part that's easy to get wrong, so read it before touching
    language (`"Esta mensagem foi apagada"` on pt-BR), so
    `String.isDeletionNotice()` matches a set of localized notices; add the
    language there, with a row in `NotificationTextTest`, before relying on it.
-   When that happens, `NLService.flagLastMessageDeleted()`
-   looks up the most recent stored message for that chat and marks it
-   `isDeleted = true` instead of saving the notice as a new message.
+   When that happens, `NLService.flagDeleted()` marks the stored message
+   with the notice's MessagingStyle send time `isDeleted = true` (falling
+   back to the chat's most recent message) instead of saving the notice as
+   a new message.
 5. `Notifications.notify()` then posts a local heads-up notification so the
    user knows something was deleted; tapping it sends `MainActivity` the
    `user`/`app`/`notificationDeleted` extras it needs to jump straight into
    that chat's detail screen (see `MainActivity.navigateToChatDetail()`).
 
-If you change how titles/bodies are parsed, keep in mind `ChatRepository.saveMessage()`
-also de-dupes against the last stored message for that `user`, so a
-malformed `user` key silently breaks both dedup and deletion detection.
+Messages are read from the notification's MessagingStyle when it has one,
+each saved with its own send time, so a re-post matches the stored row and
+`ChatRepository.saveMessage()` skips it (exact `user`/`app`/text/time match,
+plus a 10s same-text window against the last message). Digests without
+MessagingStyle (`android.textLines`) share one timestamp, so only the lines
+after the stored tail are saved (`newDigestLines()`). If you change how
+titles/bodies are parsed, a malformed `user` key silently breaks both dedup
+and deletion detection.
 
 **Deletion detection is best-effort, not guaranteed.** WhatsApp doesn't
 reliably re-post a "This message was deleted" notification for every
-deletion anymore, so `flagLastMessageDeleted()` only catches the cases
+deletion anymore, so `flagDeleted()` only catches the cases
 where it still does. Don't rip this out — it's free when it works — but
 don't advertise it as reliable either. The fallback the app actually
 depends on is manual: the user notices a message vanished inside WhatsApp
@@ -82,7 +88,7 @@ utility/       Extension functions, Constants-free — no dead sample data, keep
 
 ## Database
 
-Room, entities `Chat` (table `chat`) and `AllowedContact`, currently at schema version 6
+Room, entities `Chat` (table `chat`) and `AllowedContact`, currently at schema version 7
 (`app/schemas/`, `exportSchema = true`). `MIGRATION_2_3` is a manual
 migration (table rename/rebuild); `AutoMigration(from = 2, to = 3)` is also
 declared in `@Database` — if you add a new migration, follow the existing

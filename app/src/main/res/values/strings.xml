@@ -21,7 +21,7 @@
     <string name="switch_messages">Mensagens</string>
     <string name="switch_media">Mídia</string>
     <string name="delete_chat_title">Excluir conversa com %1$s?</string>
-    <string name="delete_chat_body">Apaga as mensagens e mídias salvas desta conversa. Se o contato mandar mensagem de novo, ela volta a aparecer, a menos que você escolha ignorar.</string>
+    <string name="delete_chat_body">Apaga as mensagens e mídias salvas desta conversa, exceto as favoritas. Se o contato mandar mensagem de novo, ela volta a aparecer, a menos que você escolha ignorar.</string>
     <string name="delete_chat">Excluir</string>
     <string name="delete_chat_and_ignore">Excluir e ignorar</string>
     <string name="open_video">▶ Abrir vídeo</string>
@@ -36,4 +36,13 @@
     <string name="media_perm_granted">Permissão de mídia concedida</string>
     <string name="attached_media">Mídia recuperada</string>
     <string name="message_copied">Mensagem copiada</string>
+    <string name="copy_message">Copiar</string>
+    <string name="favorite_add">Favoritar</string>
+    <string name="favorite_remove">Remover dos favoritos</string>
+    <string name="favorite_tag">★ Favorita</string>
+    <string name="ignored_title">Contatos ignorados</string>
+    <string name="ignored_sub">Contatos que você mandou ignorar. Ligue \"Mensagens\" para voltar a salvar o que eles mandarem.</string>
+    <string name="ignored_empty">Nenhum contato ignorado</string>
+    <string name="contact_ignored">%1$s ignorado. Para voltar a salvar, use o menu > Contatos ignorados.</string>
+    <string name="stop_ignoring">Desfazer</string>
 </resources>

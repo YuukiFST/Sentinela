@@ -66,7 +66,13 @@ class ChatViewModel @Inject constructor(
         }
     }
 
-    /** [ignore] also stops saving anything new from this contact. */
+    fun setFavorite(id: String, favorite: Boolean) {
+        viewModelScope.launch {
+            repository.setFavorite(id, favorite)
+        }
+    }
+
+    /** [ignore] also stops saving anything new from this contact. Favorites stay. */
     fun deleteConversation(user: String, app: String, ignore: Boolean) {
         viewModelScope.launch {
             if (ignore) repository.setSaveMessages(user, app, false)

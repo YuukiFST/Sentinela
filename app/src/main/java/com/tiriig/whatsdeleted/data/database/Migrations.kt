@@ -59,3 +59,10 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
         db.execSQL("ALTER TABLE allowed_contact ADD COLUMN saveMessages INTEGER NOT NULL DEFAULT 1")
     }
 }
+
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Favorite messages survive conversation deletion and the automatic cleanup.
+        db.execSQL("ALTER TABLE Chat ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0")
+    }
+}

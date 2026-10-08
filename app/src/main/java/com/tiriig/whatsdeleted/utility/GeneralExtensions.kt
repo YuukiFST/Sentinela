@@ -67,6 +67,22 @@ fun String.isDeletionNotice(): Boolean {
     return normalized in deletionNotices
 }
 
+/**
+ * Lines of a re-posted digest ([digest], oldest first) not stored yet. A digest
+ * re-lists recent history under one new timestamp, so its overlap is found by
+ * aligning the newest end of [storedTail] (the chat's last texts, oldest first)
+ * with the digest; the lines after the latest alignment are new.
+ * Example: `newDigestLines(listOf("a", "b"), listOf("a", "b", "c")) == listOf("c")`
+ */
+fun newDigestLines(storedTail: List<String>, digest: List<String>): List<String> {
+    if (storedTail.isEmpty()) return digest
+    for (end in digest.indices.reversed()) {
+        val n = minOf(end + 1, storedTail.size)
+        if (digest.subList(end + 1 - n, end + 1) == storedTail.takeLast(n)) return digest.drop(end + 1)
+    }
+    return digest
+}
+
 fun String.isValidApp(): Boolean {
     return when (this) {
         "com.whatsapp" -> true

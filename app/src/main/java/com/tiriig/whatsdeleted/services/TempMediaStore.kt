@@ -2,6 +2,7 @@ package com.tiriig.whatsdeleted.services
 
 import android.content.Context
 import android.util.Log
+import com.tiriig.whatsdeleted.utility.MediaKind
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
@@ -126,12 +127,15 @@ class TempMediaStore @Inject constructor(
         return copy
     }
 
-    /** Newest copy not linked to any message ([linked]) and staged within [windowMs]. */
-    fun claimOwnerless(linked: Set<String>, windowMs: Long = CLAIM_WINDOW_MS): File? =
+    /**
+     * Newest copy of type [kind] not linked to any message ([linked]) and staged
+     * within [windowMs]; the type check keeps a deleted voice note from taking a photo.
+     */
+    fun claimOwnerless(linked: Set<String>, kind: MediaKind, windowMs: Long = CLAIM_WINDOW_MS): File? =
         synchronized(lock) {
             val since = System.currentTimeMillis() - windowMs
             mediaDir().listFiles()
-                ?.filter { it.lastModified() >= since && it.absolutePath !in linked }
+                ?.filter { it.lastModified() >= since && it.absolutePath !in linked && MediaKind.of(it) == kind }
                 ?.maxByOrNull { it.lastModified() }
         }
 

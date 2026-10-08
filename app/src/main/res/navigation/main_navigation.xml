@@ -20,4 +20,15 @@
         android:name="com.tiriig.whatsdeleted.ui.allowlist.AllowedContactsFragment"
         android:label="@string/allowlist_title"
         tools:layout="@layout/fragment_allowed_contacts" />
+    <!-- Same screen filtered to ignored contacts, so one can be switched back on. -->
+    <fragment
+        android:id="@+id/ignoredContactsFragment"
+        android:name="com.tiriig.whatsdeleted.ui.allowlist.AllowedContactsFragment"
+        android:label="@string/ignored_title"
+        tools:layout="@layout/fragment_allowed_contacts">
+        <argument
+            android:name="ignoredOnly"
+            android:defaultValue="true"
+            app:argType="boolean" />
+    </fragment>
 </navigation>

@@ -42,11 +42,17 @@ class ChatRepository @Inject constructor(
     // otherwise two overlapping saves both read "no duplicate yet" and both insert.
     private val saveMutex = Mutex()
 
-    suspend fun saveMessage(chat: Chat) {
-        withContext(Dispatchers.IO) {
-            if (!chat.message.isValidTitle()) return@withContext
+    /** Stores [chat] unless it repeats a stored message; true when inserted. */
+    suspend fun saveMessage(chat: Chat): Boolean {
+        return withContext(Dispatchers.IO) {
+            if (!chat.message.isValidTitle()) return@withContext false
 
             saveMutex.withLock {
+                // A re-post repeats text and send time: comparing with the last
+                // message only let any re-post of an older message in again.
+                if (database.userDao().hasMessage(chat.user, chat.app, chat.message, chat.dateTime)) {
+                    return@withLock false
+                }
                 // Scope to this conversation (user + app): the same contact name
                 // can exist in two apps, and comparing across apps both hides
                 // real messages and lets re-posts slip through.
@@ -61,7 +67,28 @@ class ChatRepository @Inject constructor(
                     kotlin.math.abs(chat.dateTime - lastMessage.dateTime) < DEDUP_WINDOW_MS
 
                 if (!isDuplicate) database.userDao().save(chat)
+                !isDuplicate
             }
+        }
+    }
+
+    /** Newest [limit] texts of the chat, oldest first (digest overlap check). */
+    suspend fun recentTexts(user: String, app: String, limit: Int): List<String> {
+        return withContext(Dispatchers.IO) {
+            database.userDao().getRecentTexts(user, app, limit).asReversed()
+        }
+    }
+
+    /** The chat's message sent at [dateTime] (MessagingStyle timestamp), if stored. */
+    suspend fun messageAt(user: String, app: String, dateTime: Long): DeletedMessage? {
+        return withContext(Dispatchers.IO) {
+            database.userDao().getMessageAt(user, app, dateTime)
+        }
+    }
+
+    suspend fun setFavorite(id: String, favorite: Boolean) {
+        withContext(Dispatchers.IO) {
+            database.userDao().setFavorite(id, favorite)
         }
     }
 
@@ -158,7 +185,7 @@ class ChatRepository @Inject constructor(
         }
     }
 
-    /** Removes the conversation from the chat list: its messages and media copies. */
+    /** Removes the conversation's messages and media copies, except favorites. */
     suspend fun deleteConversation(user: String, app: String) {
         withContext(Dispatchers.IO) {
             val paths = database.userDao().getMediaPathsForChat(user, app)

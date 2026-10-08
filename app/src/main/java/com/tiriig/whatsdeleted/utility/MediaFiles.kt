@@ -44,29 +44,39 @@ fun PlaceholderKind.whatsAppFolders(): List<String> = when (this) {
     PlaceholderKind.GIF -> listOf("Animated Gifs")
 }
 
+/** File type a placeholder's media is saved as (a sticker is an image, a GIF a video). */
+fun PlaceholderKind.mediaKind(): MediaKind = when (this) {
+    PlaceholderKind.PHOTO, PlaceholderKind.STICKER -> MediaKind.IMAGE
+    PlaceholderKind.VIDEO, PlaceholderKind.GIF -> MediaKind.VIDEO
+    PlaceholderKind.AUDIO -> MediaKind.AUDIO
+}
+
 /**
- * Which placeholder a WhatsApp media file answers. The folder decides first:
- * a sticker is a .webp image and a GIF is an .mp4, so the extension alone would
- * hand them to a photo or video message. Null for non-media files.
+ * Which placeholder a WhatsApp media file answers, decided by its folder: a
+ * sticker is a .webp image and a GIF is an .mp4, so the extension alone would
+ * hand them to a photo or video message. Files outside the chat media folders
+ * (profile photos, documents, wallpapers) are null: they belong to no message,
+ * and taking them showed an unrelated picture on a view-once photo.
  * Example: `File(".../WhatsApp Stickers/STK-1.webp").arrivingKind() == STICKER`
  */
 fun File.arrivingKind(): PlaceholderKind? {
+    if (MediaKind.of(this) == null) return null
     val path = invariantSeparatorsPath
-    if (" Stickers/" in path) return PlaceholderKind.STICKER
-    if (" Animated Gifs/" in path) return PlaceholderKind.GIF
-    return when (MediaKind.of(this)) {
-        MediaKind.IMAGE -> PlaceholderKind.PHOTO
-        MediaKind.VIDEO -> PlaceholderKind.VIDEO
-        MediaKind.AUDIO -> PlaceholderKind.AUDIO
-        null -> null
+    return PlaceholderKind.entries.firstOrNull { kind ->
+        kind.whatsAppFolders().any { "/WhatsApp $it/" in path || "/WhatsApp Business $it/" in path }
     }
 }
 
 private val callWords = listOf("call", "chamada", "ligação", "ligacao")
 
+// View-once media never reaches the WhatsApp folders, so any file taken for it
+// is someone else's: an unrelated photo showed up on a view-once message.
+private val viewOnceWords = listOf("view once", "visualização única", "visualizacao unica", "visualización única")
+
 fun placeholderKind(text: String): PlaceholderKind? {
     val lower = text.trim().trimStart { !it.isLetterOrDigit() }.lowercase()
     if (callWords.any { it in lower }) return null
+    if (viewOnceWords.any { it in lower }) return null
     if ("sticker" in lower || "figurinha" in lower) return PlaceholderKind.STICKER
     if ("gif" in lower) return PlaceholderKind.GIF
     if ("voice" in lower || "voz" in lower || "audio" in lower || "áudio" in lower ||
